@@ -3,7 +3,11 @@ name = "synthetic-user-lab"
 version = "0.1.0"
 description = "A research harness that runs panels of LLM-simulated users against product artefacts."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy>=2.0.52",
+]
 
 [dependency-groups]
 dev = [

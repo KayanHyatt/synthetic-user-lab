@@ -130,18 +130,32 @@ in this milestone, not bolted on later):
 
 | Model | Key fields |
 |---|---|
-| `Study` | id, name, config_hash, created_at, git_sha |
-| `Artefact` | id, kind (html/text/image), content_hash, body |
+| `Study` | id, name, research_goal, artefact_id, config_hash, created_at, git_sha |
+| `Artefact` | id, name, kind (html/text/image), content_hash, body |
 | `Panel` | id, study_id, seed, size, config_yaml |
 | `Persona` | id, panel_id, name, segment, attributes (JSON), card_text |
 | `Scenario` | id, study_id, task, questions (JSON) |
-| `Run` | id, study_id, persona_id, scenario_id, status, started_at, finished_at |
+| `Run` | id, study_id, persona_id, scenario_id, status, started_at, finished_at, error |
 | `Turn` | id, run_id, role, ordinal, content, model_call_id |
-| `ModelCall` | id, provider, model, prompt_hash, tokens_in, tokens_out, cost_usd, latency_ms, seed, cached |
+| `ModelCall` | id, run_id, agent, provider, model, prompt_hash, tokens_in, tokens_out, cost_usd, latency_ms, seed, cached |
 | `Finding` | id, run_id, category, severity(1-5), summary, evidence_turn_id, cluster_id |
 
 `ModelCall` is what makes cost and reproducibility auditable — do not treat it
 as optional bookkeeping.
+
+> **M1 implementation note.** Columns added beyond this table, and why:
+> `Study.research_goal` is the string the persona-isolation boundary must
+> never leak — without it there is nothing for the M4 isolation test to
+> assert against. `Study.artefact_id` links a study to the artefact it runs
+> against (the table above never otherwise connects them, and M6's
+> discriminative-validity check needs exactly this edge).
+> `Artefact.name` is a human-readable label, since `content_hash` isn't one.
+> `Run.error` carries a failed run's failure reason (`status` alone cannot).
+> `ModelCall.run_id` (nullable) and `ModelCall.agent` exist because the
+> Analyst writes `ModelCall` rows with no corresponding `Turn` — without
+> `run_id` here, `sul cost <study_id>` (M2's acceptance criterion) would
+> silently miss Analyst spend. No `Evidence` table and no Alembic were added;
+> both remain out of scope for M1.
 
 **Acceptance:** tests create a full object graph and query it; `docs/architecture.md` contains an ER diagram (Mermaid is fine).
 
