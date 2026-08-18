@@ -1,0 +1,52 @@
+[project]
+name = "synthetic-user-lab"
+version = "0.1.0"
+description = "A research harness that runs panels of LLM-simulated users against product artefacts."
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sul"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+# Ruff formats fenced Python blocks in Markdown by default; scope it to actual
+# source so it never rewrites PROJECT_SPEC.md, README.md, or CLAUDE.md.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "slow: tests that take longer than normal to run",
+    "llm: would require a live provider call; must never actually run one — use FakeProvider instead",
+    "integration: exercises multiple components together",
+]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "sul.*"
+disallow_untyped_defs = true
