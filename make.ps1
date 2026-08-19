@@ -53,7 +53,7 @@ function Demo {
 }
 
 function Validate {
-    Write-Host "validate: not implemented yet (lands in M6 - Validity harness)." -ForegroundColor Yellow
+    Invoke-Step "sul validate" @("uv", "run", "sul", "validate")
 }
 
 switch ($Target) {

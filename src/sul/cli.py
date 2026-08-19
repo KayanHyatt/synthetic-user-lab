@@ -2,12 +2,15 @@
 
 `sul cost <study_id>` landed in M2 (PROJECT_SPEC.md §M2's own acceptance
 criterion). `sul report <study_id>` lands in M5 (§M5: "`sul report
-<study_id>` produces a report..."), ahead of the rest of the CLI (`personas
-sample`, `run`, `validate`), which remains M7's scope.
+<study_id>` produces a report..."). `sul validate` lands in M6 (§M6:
+"`make validate` runs five checks and writes `docs/validity_report.md`"),
+following the same precedent -- both land ahead of the rest of the CLI
+(`personas sample`, `run`), which remains M7's scope.
 """
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import typer
@@ -15,11 +18,15 @@ from sqlalchemy import func, select
 
 from sul.analysis.config import ClusteringConfig, load_clustering_config
 from sul.config import get_settings
-from sul.db import make_engine, make_session_factory
+from sul.db import create_all, make_engine, make_session_factory
 from sul.models import ModelCall, Run, Study
+from sul.providers.fake import FakeProvider
 from sul.report.build import StudyNotFoundError, build_report
 from sul.report.html import render_html
 from sul.report.markdown import render_markdown
+from sul.validity.harness import run_validity_harness
+from sul.validity.limitations import render_limitations_markdown
+from sul.validity.markdown import render_validity_markdown
 
 app = typer.Typer(help="Synthetic User Lab CLI.")
 
@@ -129,6 +136,51 @@ def report(
 
     typer.echo(str(md_path))
     typer.echo(str(html_path))
+
+
+@app.command()
+def validate(
+    out_dir: Path = typer.Option(
+        Path("docs"),
+        "--out-dir",
+        help="Directory to write validity_report.md and limitations.md into.",
+    ),
+) -> None:
+    """Run the M6 validity harness end-to-end offline and write
+    docs/validity_report.md + docs/limitations.md.
+
+    Always runs against `FakeProvider` -- there is no flag on this command
+    that constructs anything else (PROJECT_SPEC.md §M6 acceptance: "validity
+    report generated end-to-end offline"). A cassette-backed validity run
+    against a real provider's recorded traffic is a separate, explicitly
+    invoked path; it is never this command
+    (`tests/test_validity_cassette_plumbing.py` exercises that path directly).
+    """
+    settings = get_settings()
+    engine = make_engine(settings.database_url)
+    # Unlike `sul cost`/`sul report`, `sul validate` needs no pre-existing
+    # study -- it materialises its own -- so it's the first CLI command that
+    # can be the very first thing run against a fresh clone's database.
+    create_all(engine)
+    session_factory = make_session_factory(engine)
+
+    report = asyncio.run(
+        run_validity_harness(
+            session_factory,
+            provider=FakeProvider(),
+            provider_name="fake",
+            model="fake-1",
+        )
+    )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    validity_path = out_dir / "validity_report.md"
+    limitations_path = out_dir / "limitations.md"
+    validity_path.write_text(render_validity_markdown(report), encoding="utf-8")
+    limitations_path.write_text(render_limitations_markdown(report), encoding="utf-8")
+
+    typer.echo(str(validity_path))
+    typer.echo(str(limitations_path))
 
 
 if __name__ == "__main__":

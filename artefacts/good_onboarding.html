@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  Fixture artefact for M6's discriminative-validity check (PROJECT_SPEC.md
+  §M6.2). A "clean" counterpart to bad_onboarding.html: same product, same
+  structure, same length, with the three seeded defects from that file fixed
+  rather than a differently-shaped page — the comparison is only meaningful if
+  the two artefacts differ in the defects being measured, not in unrelated
+  structure.
+
+    1. The "Work email" field now has a visible label.
+    2. The "See full plan details" link now points at the pricing section on
+       this same page, and goes somewhere.
+    3. The headline price and the pricing table agree ($15/mo, both places).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nimbus Notes — Sign up</title>
+  </head>
+  <body>
+    <header>
+      <h1>Nimbus Notes</h1>
+      <p>Start free. Starter plan from just <strong>$15/mo</strong>.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Create your account</h2>
+        <form>
+          <div>
+            <label for="full-name">Full name</label>
+            <input id="full-name" name="full_name" type="text" required />
+          </div>
+          <div>
+            <label for="work-email">Work email</label>
+            <input id="work-email" name="work_email" type="email" required />
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+          <button type="submit">Start free trial</button>
+        </form>
+        <p><a href="#pricing">See full plan details</a></p>
+      </section>
+
+      <section id="pricing">
+        <h2>Pricing</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Price</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Starter</td>
+              <td>$15/mo</td>
+              <td>Billed annually. A one-time $25 setup fee applies.</td>
+            </tr>
+            <tr>
+              <td>Team</td>
+              <td>$49/mo</td>
+              <td>Per workspace, up to 10 seats.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+# Small, fixed panel for `sul.validity` (PROJECT_SPEC.md §M6). Not an
+# "example" like configs/panel.example.yaml -- `make validate` actually reads
+# this one, every time. Deliberately small (5 personas, 2 segments) because
+# M6 runs a full study multiple times over (repeats, two artefacts, two
+# framings, two orderings): panel_20/panel.example.yaml's size is right for a
+# single M4 study, not for a harness that multiplies study count.
+seed: 1001
+size: 5
+segments:
+  - name: time_poor_professional
+    weight: 0.6
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low
+
+  - name: cost_sensitive_student
+    weight: 0.4
+    attributes:
+      tech_comfort:
+        choice: [medium, low]
+      patience: medium

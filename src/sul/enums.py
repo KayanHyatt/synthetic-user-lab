@@ -42,12 +42,17 @@ class AgentRole(enum.StrEnum):
 
     A superset of TurnRole, because ModelCall must also account for Analyst
     calls (which produce Findings, not Turns) so that cost queries such as
-    `sul cost <study_id>` are complete.
+    `sul cost <study_id>` are complete. `VALIDITY_PROBE` (PROJECT_SPEC.md §M6)
+    is the same idea applied to `sul.validity.probes`' framing/choice probes:
+    a `ModelCall` with a `run_id` but no `Turn`, same as Analyst calls, kept
+    distinguishable from ordinary persona turns so a cost breakdown doesn't
+    conflate M4 turn-loop spend with M6 validity-harness spend.
     """
 
     MODERATOR = "moderator"
     PERSONA = "persona"
     ANALYST = "analyst"
+    VALIDITY_PROBE = "validity_probe"
 
 
 class FindingCategory(enum.StrEnum):

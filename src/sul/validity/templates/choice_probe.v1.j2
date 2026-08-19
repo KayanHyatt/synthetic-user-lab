@@ -1,0 +1,17 @@
+{{ persona_card }}
+
+The product artefact in front of you (a {{ artefact_kind }} document):
+---
+{{ artefact_body }}
+---
+
+You are choosing between the following options, as this persona. They are
+listed in no particular order of preference -- consider each on its own
+merits.
+
+{% for option in options %}
+{{ loop.index }}. {{ option }}
+{% endfor %}
+
+Reply with exactly one `choice`: the option text you would actually pick,
+copied exactly as it appears above.

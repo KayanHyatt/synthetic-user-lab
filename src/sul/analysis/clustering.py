@@ -53,15 +53,22 @@ coincidence even with the renumbering step removed -- this was caught by
 hand during development: an earlier version of that test used set-equality
 and stayed green with renumbering deliberately broken.
 
-Findings are also sorted by `Finding.id` up front (`ordered`), but that sort
-is *not* what makes cluster numbering order-independent -- removing it was
-tried by hand and left every test green, because the renumbering step and
-every tie-break below it already key off `.finding_id` values, never
-position. It stays for readability (`texts`/`dense`/`raw_labels` line up
-with ascending finding id, which is one less thing to hold in your head when
-reading a `raw_labels` array next to `ordered`) and as a second layer against
-a future change to the renumbering step that accidentally starts trusting
-position -- not because today's correctness depends on it.
+Findings are also sorted by `Finding.id` up front (`ordered`), before
+vectorising -- and this sort is load-bearing, not redundant defence-in-depth.
+Renumbering (above) only fixes up cluster *labels* to be order-independent;
+it does not fix up the *partition* those labels describe.
+`AgglomerativeClustering` breaks tied merge distances by array position, and this corpus
+deliberately contains the cases that produce exact ties -- textually
+identical findings, and multiple zero-vector rows. Feeding rows in a
+different order can therefore merge a different set of tied rows into the
+same cluster, not just relabel an identical partition differently. Sorting
+by `Finding.id` up front fixes that array order deterministically, which is
+what keeps the *partition itself* -- not just its numbering -- independent
+of the order rows arrived in. (An earlier version of this docstring
+described this sort as redundant, on the evidence that removing it left the
+suite green; that was a fact about this fixture's particular tie structure
+at the time it was checked, not a property of the algorithm -- a fixture
+without exact ties would pass either way and prove nothing about this.)
 """
 
 from __future__ import annotations

@@ -548,6 +548,20 @@ rendered finding has zero evidence.
 > `jinja2` was already a direct dependency (M2); `sul.report` is a new
 > consumer of it, not a new dependency. `reports/` added to `.gitignore` as
 > a generated-output directory, the same treatment as `*.db`.
+>
+> **Deviation 5 (recorded in M6, landed in M5).** `pyproject.toml` also
+> gained a `[tool.ruff.lint.flake8-bugbear]` relaxation in this milestone's
+> commit, for `sul report`'s Typer options:
+> ```toml
+> [tool.ruff.lint.flake8-bugbear]
+> extend-immutable-calls = ["typer.Argument", "typer.Option"]
+> ```
+> `typer.Option(...)`/`typer.Argument(...)` as a signature default is the
+> documented Typer pattern, not the mutable-default footgun B008 exists to
+> catch — the calls are immutable, constructed once at import time. This was
+> omitted from this section's deviation list when M5 actually shipped it;
+> recorded here because a lint relaxation belongs where relaxations are
+> recorded, not only in the `pyproject.toml` inline comment next to it.
 
 ---
 
@@ -576,6 +590,124 @@ it is not, and what it systematically misses.
 
 **Acceptance:** validity report generated end-to-end offline; `docs/limitations.md`
 states at least two concrete, measured weaknesses.
+
+> **M6 implementation note.** This section's own header names criterion 5
+> "Known-answer calibration"; its body specifies recall against a fixed
+> known-answer set ("Report detection rate"), not a confidence score. The
+> two names don't describe the same statistic — `sul.validity.calibration`
+> implements the body (detection rate), and this note exists so a future
+> reader doesn't reopen the question the header seems to ask.
+>
+> **Deviation 1: `sul validate` added to `src/sul/cli.py` in this milestone**,
+> ahead of `personas sample`/`run`, following the precedent §M2 set for `sul
+> cost` and §M5 set for `sul report` — both landed early "ahead of the rest
+> of the Typer CLI," which is exactly this situation. `.\make.ps1 validate`
+> now runs `uv run sul validate`.
+>
+> **Deviation 2: `artefacts/good_onboarding.html` authored.** Named by §3's
+> repo layout and anticipated by `bad_onboarding.html`'s own M4 fixture
+> comment, but never created through M1–M5. Same product, same structure,
+> same length as the bad artefact, with its three seeded defects fixed —
+> built for a fair discriminative-validity comparison, not a differently
+> shaped page.
+>
+> **Deviation 3: two new probe types, outside the M4 turn loop.** Nothing in
+> M4's turn loop can pose a specific, experimenter-chosen question and get a
+> directly comparable structured answer back — the moderator's follow-up is
+> LLM-chosen and gated on a confusion/abandonment signal, and
+> `PersonaReply.utterance` is free text with no agree/disagree or
+> choice-among-options field. §M6.3/§M6.4 need exactly that, so
+> `sul.validity.probes` adds `run_framing_probe`/`run_choice_probe`: one
+> isolated call each (persona card + artefact + one fixed prompt, no
+> transcript, no research goal), built the same way `sul.agents.persona`/
+> `moderator`/`analyst` are (`ModelClient` injected, one `.v1.j2` template
+> per probe, `template_version` recorded with the call —
+> `framing_probe.v1`/`choice_probe.v1`). `sul.validity.schemas
+> .FramingProbeContext`/`ChoiceProbeContext` are the isolation boundary
+> (`extra="forbid"`, no research-goal field to accept one in the first
+> place), same discipline as `sul.schemas.isolation.PersonaContext`. Neither
+> probe reuses `PersonaReply`: acquiescence/position-bias need a structured
+> answer a metric can compare directly, not free text a metric would have to
+> string-match — the same "never regex an LLM response" reasoning that
+> already governs `sul.schemas.agents`. `AgentRole.VALIDITY_PROBE` was added
+> (`sul.enums`) so these calls' cost is distinguishable from ordinary M4
+> turn-loop spend in a `sul cost` breakdown, the same reasoning `AgentRole
+> .ANALYST` was added for in M1: a `ModelCall` with a `run_id` but no `Turn`.
+>
+> **Deviation 4 (the load-bearing one): §M6.2–§M6.5 report an explicit
+> `NOT_MEASURED_OFFLINE` state under `FakeProvider`, never a number.**
+> `FakeProvider` draws `AnalystFinding.category` uniformly at random and
+> `AnalystFinding.summary`/probe replies as hash-keyed noise, blind to
+> artefact content, question framing, and option position alike — any number
+> these four checks produced against `FakeProvider` would be sampling noise
+> wearing the shape of a result. `sul.validity.sentinel.MeasurementStatus` is
+> a distinct enum value (never an absent/`None`/zero field) rendered visibly
+> in both `sul validate`'s output and `docs/validity_report.md`, with a
+> one-line reason. Every metric module still *runs* end to end against
+> whichever provider it's given — there is no FakeProvider-specific branch
+> inside `sul.validity.discriminative`/`.acquiescence`/`.position`/
+> `.calibration`; `sul.validity.harness._is_offline_provider` is the one,
+> central place that decides whether a computed result is worth showing a
+> reader, based on `provider_name` alone (`"fake"` gates; any other name,
+> including a cassette-backed real adapter, does not). This is why
+> `docs/validity_report.md` and `docs/limitations.md` are still "generated
+> end-to-end offline" per this section's own acceptance line: the pipeline
+> runs; only the reported numbers are gated.
+>
+> Reproducibility (§M6.1) is not gated — it is the one check that's
+> genuinely meaningful under `FakeProvider`, because the entire pipeline
+> (`derive_seed` → a pure sha256-keyed synthesis → clustering's
+> `Finding.id`-ordered tie-breaks) is deterministic by construction. Its
+> number is real but not rich: same-seed repeats show exactly zero variance
+> and exactly 1.0 top-5 cluster Jaccard overlap every time, and
+> `sul.validity.model.REPRODUCIBILITY_CAVEAT` — rendered directly beside the
+> numbers, not as a separate footnote — says so explicitly: this measures
+> the harness's own determinism, not the panel's. `sul.validity
+> .reproducibility` also measures seed sensitivity (different seeds, not the
+> same one) as an addition beyond §M6.1's own text: unlike same-seed
+> reproducibility, `FakeProvider`'s hash includes the seed, so this is
+> genuinely offline-meaningful — it measures how much the clustering/ranking
+> pipeline amplifies input variation, not panel realism.
+>
+> **Deviation 5: cassette-backed replay is supported as a first-class
+> parameter, but `sul validate` never constructs one.** Every §M6.2–§M6.5
+> function takes its `LLMProvider` as a parameter — `FakeProvider` and a
+> cassette-backed `AnthropicProvider` are just two callers of the same code.
+> `tests/test_validity_cassette_plumbing.py` proves the full path (
+> `ModelClient` → `AnthropicProvider` → `CassetteTransport` replay → parsed
+> Pydantic reply) works, against a cassette hand-authored via
+> `httpx.MockTransport` (the same no-network recording technique
+> `tests/test_cassettes.py` already uses for the cassette layer itself) —
+> never a live call. `sul validate` itself hardcodes `FakeProvider` with no
+> flag that could point it elsewhere; `tests/test_cli_validate.py` checks
+> this structurally, against the command's actual `--help` output, not by
+> convention. Recording a *real* cassette (spending real money, the first
+> live call in this repo's history) is a separate, explicitly-authorised
+> action outside this milestone's scope, gated behind a decision the person
+> running this project makes with a cost estimate in hand — not something
+> `sul validate` or this commit does.
+>
+> **Three offline-measurable additions to `docs/limitations.md`**
+> (`sul.validity.measurements`), none gated, because none depend on an LLM:
+> clustering margin (extends `tests/test_clustering.py`'s discrimination
+> fixture with the actual cosine-distance numbers), zero-vector singleton
+> conflation (a finding that vectorises to an all-zero TF-IDF row is
+> indistinguishable, in a rendered report, from a genuine frequency-1
+> theme), and threshold-scaling behaviour (`distance_threshold=0.6`'s
+> cluster count / mean cluster size as corpus size grows, against
+> deterministically-generated synthetic text — never against `FakeProvider`
+> output, and the default is never changed: `ClusteringConfig` and
+> `sklearn.__version__` are embedded in every `ReportModel`'s provenance,
+> and changing the default would break comparability with every report
+> already produced). `docs/limitations.md` states all three are measured
+> weaknesses of the panel's analysis pipeline; the four gated §M6.2–§M6.5
+> checks are named in a separate section and explicitly not counted toward
+> them, since "we couldn't reach a real provider" is a limitation of running
+> the harness offline, not a measured property of the synthetic panel.
+>
+> **Dependencies.** None. Variance/Jaccard use stdlib `statistics`/set
+> arithmetic; `numpy` was already reachable (via `scikit-learn`, already
+> imported directly in `sul.analysis.clustering`).
 
 ---
 
