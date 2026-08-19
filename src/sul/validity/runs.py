@@ -38,6 +38,19 @@ DEFAULT_SCENARIO_TASK = (
 DEFAULT_QUESTIONS = ["Was the pricing clear?", "Was anything confusing?"]
 
 
+@dataclass(frozen=True)
+class ArtefactStudyRun:
+    """`run_artefact_study`'s result: the `Finding` rows *and* the
+    materialised study's id, since callers that need real per-agent-role
+    provenance (`sul.validity.data.load_provenance`) have to know which
+    study's `ModelCall` rows to read back -- the rows alone don't carry
+    that.
+    """
+
+    rows: list[FindingRow]
+    study_id: int
+
+
 async def run_artefact_study(
     session_factory: sessionmaker[Session],
     *,
@@ -51,10 +64,11 @@ async def run_artefact_study(
     research_goal: str = DEFAULT_RESEARCH_GOAL,
     scenario_task: str = DEFAULT_SCENARIO_TASK,
     questions: list[str] | None = None,
-) -> list[FindingRow]:
+) -> ArtefactStudyRun:
     """Materialise `study_name` against `artefact_path` (reusing an existing
     `Artefact` row for that content if one already exists in this session),
-    run it end to end via `provider`, and return its `Finding` rows.
+    run it end to end via `provider`, and return its `Finding` rows and
+    study id.
     """
     with session_factory() as session:
         artefact_id = get_or_create_artefact(
@@ -87,7 +101,8 @@ async def run_artefact_study(
     )
 
     with session_factory() as session:
-        return load_finding_rows(session, study_id=materialized.study_id)
+        rows = load_finding_rows(session, study_id=materialized.study_id)
+    return ArtefactStudyRun(rows=rows, study_id=materialized.study_id)
 
 
 @dataclass(frozen=True)
@@ -196,6 +211,7 @@ __all__ = [
     "DEFAULT_QUESTIONS",
     "DEFAULT_RESEARCH_GOAL",
     "DEFAULT_SCENARIO_TASK",
+    "ArtefactStudyRun",
     "ProbeMaterialization",
     "ProbeSubject",
     "materialize_probe_subjects",

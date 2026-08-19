@@ -17,6 +17,26 @@ from pydantic import BaseModel, ConfigDict
 
 from sul.validity.sentinel import MeasurementStatus
 
+
+class AgentProvenance(BaseModel):
+    """Which provider/model actually produced one agent role's calls for a
+    section's underlying data -- read back from the `ModelCall` audit trail
+    (`sul.validity.data.load_provenance`), not threaded through as a
+    separate "what was requested" value. A rendered *field* on every
+    content-dependent section (and reproducibility), never prose in a
+    caveat above or below a table: after a mixed run (some sections
+    FakeProvider, others a cassette-backed real model, possibly a different
+    model per agent role), a reader must be able to tell which is which
+    from the row itself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: str
+    provider: str
+    model: str
+
+
 REPRODUCIBILITY_CAVEAT = (
     "Zero variance and a 1.0 mean top-5 cluster Jaccard overlap here are "
     "structurally guaranteed by FakeProvider's deterministic hashing "
@@ -63,6 +83,7 @@ class ReproducibilitySection(BaseModel):
     mean_top5_cluster_jaccard: float
     caveat: str = REPRODUCIBILITY_CAVEAT
     seed_sensitivity: SeedSensitivitySection
+    provenance: list[AgentProvenance]
 
 
 class DiscriminativeValiditySection(BaseModel):
@@ -75,6 +96,7 @@ class DiscriminativeValiditySection(BaseModel):
     bad_blocker_confusion_count: int | None = None
     good_blocker_confusion_count: int | None = None
     material_difference: bool | None = None
+    provenance: list[AgentProvenance]
 
 
 class AcquiescenceSection(BaseModel):
@@ -89,6 +111,7 @@ class AcquiescenceSection(BaseModel):
     positive_agree_rate: float | None = None
     negative_agree_rate: float | None = None
     agreement_gap: float | None = None
+    provenance: list[AgentProvenance]
 
 
 class PositionBiasSection(BaseModel):
@@ -102,6 +125,7 @@ class PositionBiasSection(BaseModel):
     first_position_share_original_order: float | None = None
     first_position_share_reversed_order: float | None = None
     preference_shift: float | None = None
+    provenance: list[AgentProvenance]
 
 
 class DefectResult(BaseModel):
@@ -127,6 +151,7 @@ class KnownAnswerCalibrationSection(BaseModel):
     detected_count: int | None = None
     detection_rate: float | None = None
     per_defect: list[DefectResult] | None = None
+    provenance: list[AgentProvenance]
 
 
 class ClusteringMarginMeasurement(BaseModel):
@@ -201,6 +226,7 @@ class ValidityReportModel(BaseModel):
 __all__ = [
     "REPRODUCIBILITY_CAVEAT",
     "AcquiescenceSection",
+    "AgentProvenance",
     "ClusteringMarginMeasurement",
     "DefectResult",
     "DiscriminativeValiditySection",

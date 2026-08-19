@@ -14,6 +14,8 @@ from sul.enums import AgentRole
 from sul.providers.base import LLMProvider
 from sul.providers.client import ModelClient
 from sul.runner.seeds import derive_seed
+from sul.validity.data import load_provenance
+from sul.validity.model import AgentProvenance
 from sul.validity.probes import run_framing_probe
 from sul.validity.runs import materialize_probe_subjects
 from sul.validity.schemas import Agreement, FramingProbeContext
@@ -38,6 +40,8 @@ class AcquiescenceResult:
     positive_agree_rate: float
     negative_agree_rate: float
     agreement_gap: float
+    study_id: int
+    provenance: list[AgentProvenance]
 
 
 async def run_acquiescence_probe(
@@ -103,12 +107,18 @@ async def run_acquiescence_probe(
 
     positive_rate = agreement_rate(positive_replies)
     negative_rate = agreement_rate(negative_replies)
+
+    with session_factory() as session:
+        provenance = load_provenance(session, study_ids=[materialized.study_id])
+
     return AcquiescenceResult(
         positively_framed_question=positive_question,
         negatively_framed_question=negative_question,
         positive_agree_rate=positive_rate,
         negative_agree_rate=negative_rate,
         agreement_gap=abs(positive_rate - negative_rate),
+        study_id=materialized.study_id,
+        provenance=provenance,
     )
 
 

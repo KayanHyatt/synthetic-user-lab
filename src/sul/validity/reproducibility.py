@@ -25,7 +25,7 @@ from sul.analysis.config import ClusteringConfig
 from sul.analysis.ranking import RankedCluster, rank_clusters
 from sul.personas.archetypes import load_panel_config
 from sul.providers.base import LLMProvider
-from sul.validity.data import finding_content_key
+from sul.validity.data import finding_content_key, load_provenance
 from sul.validity.model import ReproducibilitySection, SeedSensitivitySection
 from sul.validity.runs import run_artefact_study
 
@@ -127,7 +127,7 @@ async def measure_reproducibility(
     root = base_path if base_path is not None else Path.cwd()
     config = clustering_config or ClusteringConfig()
 
-    same_seed_rows = [
+    same_seed_runs = [
         await run_artefact_study(
             session_factory,
             provider=provider,
@@ -140,6 +140,7 @@ async def measure_reproducibility(
         )
         for i in range(repeats)
     ]
+    same_seed_rows = [r.rows for r in same_seed_runs]
     finding_count_variance = statistics.pvariance(len(r) for r in same_seed_rows)
     same_seed_top5 = [top5_content_key_sets(r, config) for r in same_seed_rows]
 
@@ -155,11 +156,17 @@ async def measure_reproducibility(
         base_path=root,
     )
 
+    with session_factory() as session:
+        provenance = load_provenance(
+            session, study_ids=[r.study_id for r in same_seed_runs]
+        )
+
     return ReproducibilitySection(
         repeats=repeats,
         finding_count_variance=finding_count_variance,
         mean_top5_cluster_jaccard=mean_top5_jaccard(same_seed_top5),
         seed_sensitivity=seed_sensitivity,
+        provenance=provenance,
     )
 
 
@@ -183,7 +190,7 @@ async def _measure_seed_sensitivity(
             seeded_panel_path = _write_panel_with_seed(
                 base_panel_path, 9000 + i, tmp_dir
             )
-            rows = await run_artefact_study(
+            run = await run_artefact_study(
                 session_factory,
                 provider=provider,
                 provider_name=provider_name,
@@ -198,7 +205,7 @@ async def _measure_seed_sensitivity(
                 base_path=base_path,
                 study_name=f"M6.1 seed-sensitivity seed {9000 + i}",
             )
-            rows_per_seed.append(rows)
+            rows_per_seed.append(run.rows)
 
     finding_counts = [len(r) for r in rows_per_seed]
     cluster_counts = [

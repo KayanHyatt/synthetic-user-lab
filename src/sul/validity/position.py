@@ -20,6 +20,8 @@ from sul.enums import AgentRole
 from sul.providers.base import LLMProvider
 from sul.providers.client import ModelClient
 from sul.runner.seeds import derive_seed
+from sul.validity.data import load_provenance
+from sul.validity.model import AgentProvenance
 from sul.validity.probes import run_choice_probe
 from sul.validity.runs import materialize_probe_subjects
 from sul.validity.schemas import ChoiceProbeContext
@@ -48,6 +50,8 @@ class PositionBiasResult:
     first_position_share_original_order: float
     first_position_share_reversed_order: float
     preference_shift: float
+    study_id: int
+    provenance: list[AgentProvenance]
 
 
 async def run_position_bias_probe(
@@ -112,11 +116,17 @@ async def run_position_bias_probe(
 
     share_original = first_option_share(choices_by_ordering[0], first_label)
     share_reversed = first_option_share(choices_by_ordering[1], first_label)
+
+    with session_factory() as session:
+        provenance = load_provenance(session, study_ids=[materialized.study_id])
+
     return PositionBiasResult(
         options=options,
         first_position_share_original_order=share_original,
         first_position_share_reversed_order=share_reversed,
         preference_shift=abs(share_original - share_reversed),
+        study_id=materialized.study_id,
+        provenance=provenance,
     )
 
 

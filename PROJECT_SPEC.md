@@ -710,6 +710,60 @@ states at least two concrete, measured weaknesses.
 > running this project makes with a cost estimate in hand — not something
 > `sul validate` or this commit does.
 >
+> **Deviation 7: `tests.support.scripted_provider.ScriptedProvider` is a
+> second offline provider, alongside M2's `FakeProvider`, and it is
+> deliberately more dangerous.** `FakeProvider` synthesizes from a hash,
+> content-blind by construction — a wiring mistake that let it reach `sul
+> validate` would still be caught by "the numbers don't move with the
+> input." `ScriptedProvider` answers a script written against the actual
+> prompt text; a mistake that let *that* reach `run_validity_harness` would
+> produce numbers that respond sensibly to artefact/framing/position and
+> would pass exactly the sanity checks a reviewer would apply — measuring a
+> script instead of a panel, with no cassette and no live call, and no
+> obvious tell. It exists only as a negative-control test double (every use
+> in this milestone is inside `tests/`) and must never be permitted to back
+> `sul validate`. `run_validity_harness` enforces this itself, structurally:
+> `provider` is checked against an explicit two-member allow-list
+> (`FakeProvider`, `AnthropicProvider`) before any dispatch, raising
+> `UnsupportedValidityProviderError` — not a negation ("anything that isn't
+> `FakeProvider`"), which would have let `ScriptedProvider` straight through
+> the moment a recording script existed.
+> `tests/test_validity_harness.py::test_scripted_provider_is_refused_at_the_harness_boundary`
+> asserts the rejection by type.
+>
+> **Deviation 8: provenance (provider, and model per agent role) is a
+> rendered field on every content-dependent section, read back from the
+> `ModelCall` audit trail, not a single blanket value for the whole
+> report.** Once real recording exists, one `validity_report.md` can carry
+> some sections backed by `FakeProvider` and others by a cassette-backed
+> real model — potentially a *different* model per agent role within one
+> section (§M6.2's Analyst vs. its Persona/Moderator calls). A single
+> top-of-report "Provider: X / model: Y" line (the original design) would
+> have let a reader mistake a mixed run for one uniform experiment — the
+> same failure this milestone exists to prevent, reached through the
+> rendering layer instead of the measurement layer. `sul.validity.data
+> .load_provenance` queries the real `ModelCall` rows for exactly the
+> studies that produced a section's numbers (never a separately-threaded
+> "what I asked for" value, which could drift from what actually got
+> dispatched via a retry or backoff path) and returns one `AgentProvenance`
+> per distinct `(agent, provider, model)` triple. `sul.validity.runs
+> .run_artefact_study` now returns the materialised study id alongside its
+> `Finding` rows (`ArtefactStudyRun`) so callers have something to query
+> provenance against; `DiscriminativeValidityResult`, `AcquiescenceResult`
+> and `PositionBiasResult` all carry their own `study_id`/`provenance`.
+> `sul.validity.harness` attaches provenance to a section in both branches
+> (`MEASURED` and `NOT_MEASURED_OFFLINE`) — what was actually dispatched is
+> meaningful even when the resulting number is gated. `validity_report.md
+> .j2` renders it twice: a `Provenance` column in a new top-of-report
+> summary table (one row per check), and a `**Provenance:**` line inside
+> each detailed section — never folded into the reason/caveat prose, which
+> is exactly the "prose in a caveat" framing this deviation exists to avoid.
+> `tests/test_validity_rendering.py
+> ::test_provenance_is_rendered_per_row_not_collapsed_to_one_value`
+> constructs a `ValidityReportModel` by hand with two sections carrying
+> deliberately different provenance and asserts both survive into the
+> rendered text distinctly.
+>
 > **Three offline-measurable additions to `docs/limitations.md`**
 > (`sul.validity.measurements`), none gated, because none depend on an LLM:
 > clustering margin (extends `tests/test_clustering.py`'s discrimination

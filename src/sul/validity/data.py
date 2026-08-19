@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from sul.analysis.clustering import FindingRow
 from sul.enums import RunStatus
-from sul.models import Finding, Persona, Run, Turn
+from sul.models import Finding, ModelCall, Persona, Run, Turn
+from sul.validity.model import AgentProvenance
 
 
 def load_finding_rows(
@@ -85,6 +86,34 @@ def load_finding_rows(
     return result
 
 
+def load_provenance(session: Session, *, study_ids: list[int]) -> list[AgentProvenance]:
+    """Distinct (provider, agent, model) triples actually dispatched for
+    `study_ids`, read back from the `ModelCall` audit trail -- not threaded
+    through as separate "what I intended to call" bookkeeping, which could
+    silently drift from what a retry/backoff path or a future per-agent-role
+    override actually sent. `ModelCall` is what this project already treats
+    as the ground truth for cost and reproducibility (PROJECT_SPEC.md §M1);
+    provenance is the same idea applied to "which model produced this
+    number," and it's what let §M6's per-row provenance rendering
+    (PROJECT_SPEC.md's M6 implementation note) describe reality instead of
+    a plan. Ordered for byte-stable rendering, never dict/set iteration
+    order.
+    """
+    if not study_ids:
+        return []
+    rows = session.execute(
+        select(ModelCall.provider, ModelCall.agent, ModelCall.model)
+        .join(Run, Run.id == ModelCall.run_id)
+        .where(Run.study_id.in_(study_ids))
+        .distinct()
+        .order_by(ModelCall.agent, ModelCall.provider, ModelCall.model)
+    ).all()
+    return [
+        AgentProvenance(agent=agent.value, provider=provider, model=model)
+        for provider, agent, model in rows
+    ]
+
+
 def finding_content_key(row: FindingRow) -> tuple[str, str, str]:
     """A finding's identity by *content*, not by database row id.
 
@@ -100,4 +129,4 @@ def finding_content_key(row: FindingRow) -> tuple[str, str, str]:
     return (row.persona_name, row.category.value, row.summary)
 
 
-__all__ = ["finding_content_key", "load_finding_rows"]
+__all__ = ["finding_content_key", "load_finding_rows", "load_provenance"]

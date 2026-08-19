@@ -51,7 +51,9 @@ def test_sul_validate_writes_both_files_end_to_end_offline(
     assert str(limitations_path) in result.output
 
     validity_text = validity_path.read_text(encoding="utf-8")
-    assert validity_text.count("NOT MEASURED OFFLINE") == 4
+    # Once in the summary table (per-row provenance), once in the detailed
+    # section, for each of the four gated checks.
+    assert validity_text.count("NOT MEASURED OFFLINE") == 8
 
     limitations_text = limitations_path.read_text(encoding="utf-8")
     assert "not counted toward the two measured weaknesses" in limitations_text

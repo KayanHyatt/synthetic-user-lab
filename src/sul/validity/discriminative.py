@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sul.analysis.clustering import FindingRow
 from sul.enums import FindingCategory
 from sul.providers.base import LLMProvider
+from sul.validity.data import load_provenance
+from sul.validity.model import AgentProvenance
 from sul.validity.runs import run_artefact_study
 
 DEFAULT_BAD_ARTEFACT_PATH = "artefacts/bad_onboarding.html"
@@ -50,6 +52,9 @@ class DiscriminativeValidityResult:
     bad_blocker_confusion_count: int
     good_blocker_confusion_count: int
     material_difference: bool
+    bad_study_id: int
+    good_study_id: int
+    provenance: list[AgentProvenance]
 
 
 async def run_discriminative_validity(
@@ -65,7 +70,7 @@ async def run_discriminative_validity(
 ) -> DiscriminativeValidityResult:
     root = base_path if base_path is not None else Path.cwd()
 
-    bad_rows = await run_artefact_study(
+    bad_run = await run_artefact_study(
         session_factory,
         provider=provider,
         provider_name=provider_name,
@@ -75,7 +80,7 @@ async def run_discriminative_validity(
         base_path=root,
         study_name="M6.2 discriminative validity: bad artefact",
     )
-    good_rows = await run_artefact_study(
+    good_run = await run_artefact_study(
         session_factory,
         provider=provider,
         provider_name=provider_name,
@@ -86,15 +91,23 @@ async def run_discriminative_validity(
         study_name="M6.2 discriminative validity: good artefact",
     )
 
-    bad_count = blocker_confusion_count(bad_rows)
-    good_count = blocker_confusion_count(good_rows)
+    bad_count = blocker_confusion_count(bad_run.rows)
+    good_count = blocker_confusion_count(good_run.rows)
+
+    with session_factory() as session:
+        provenance = load_provenance(
+            session, study_ids=[bad_run.study_id, good_run.study_id]
+        )
 
     return DiscriminativeValidityResult(
-        bad_rows=bad_rows,
-        good_rows=good_rows,
+        bad_rows=bad_run.rows,
+        good_rows=good_run.rows,
         bad_blocker_confusion_count=bad_count,
         good_blocker_confusion_count=good_count,
         material_difference=is_material_difference(bad_count, good_count),
+        bad_study_id=bad_run.study_id,
+        good_study_id=good_run.study_id,
+        provenance=provenance,
     )
 
 
