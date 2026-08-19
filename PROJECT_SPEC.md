@@ -182,6 +182,33 @@ class LLMProvider(Protocol):
 - Structured output: pass a Pydantic schema, validate, and on failure run **one**
   repair turn ("your output failed validation, here is the error") before giving up.
 
+> **M2 implementation note.** `FakeProvider` and cassette record/replay are
+> split into two components rather than the one this section describes: a
+> cassette recorder is a decorator over a *real* provider (it wraps an
+> adapter's HTTP transport), while `FakeProvider` is a leaf that never
+> touches disk — one class cannot be both without a mode branch deciding
+> which it is on a given call. Their keys differ too: `FakeProvider` hashes
+> `(model, messages, response_schema, seed)` (the schema is added because
+> two different schemas over the same prompt must not synthesise the same
+> shape), while a cassette's match key is `sha256(method + scrubbed_url +
+> canonical_body)` — the literal wire request, canonicalised so a JSON key
+> reordering between SDK versions doesn't invalidate every recorded
+> cassette, and scrubbed *before* hashing so a redacted cassette still
+> replays. `sul.providers.cassette.CassetteTransport` implements the
+> record/replay half; `sul.providers.fake.FakeProvider` implements the
+> synthesis half. The budget kill switch (§M4) also lands here rather than
+> in M4: `sul.providers.budget.BudgetGuard` is a pre-call gate in the shared
+> call path (`sul.providers.client.ModelClient`), so every provider is
+> covered from the moment providers exist, and M4's runner only has to
+> supply the ceiling. `configs/pricing.yaml` carries dated Anthropic
+> per-token prices (2026-06-24); OpenAI and Gemini sections are
+> intentionally empty — this repo has no authoritative current rate card
+> for either, and `sul.pricing.price_for` raises `UnknownModelError` for an
+> unpriced `(provider, model)` rather than defaulting to `$0.00`. Finally,
+> `sul cost <study_id>` (named by this section's own acceptance criterion)
+> is implemented in `src/sul/cli.py` now, ahead of the rest of the Typer
+> CLI, which remains M7's scope.
+
 **Acceptance:** `make test` passes with no network (verify by running with network
 disabled). Cost for a demo run is queryable via `sul cost <study_id>`.
 
@@ -237,6 +264,16 @@ Async runner over the persona × scenario grid.
   agent's message list is constructed from persona card + artefact + moderator
   turns only. Add a test that asserts the research goal string never appears in
   any persona-bound payload.
+
+> **M4 implementation note.** The budget kill switch described above already
+> landed in M2 (`<commit-ref-placeholder>`, see the M2 implementation note
+> above): `sul.providers.budget.BudgetGuard` is a pre-call gate inside
+> `ModelClient._dispatch`, checked before every dispatch regardless of
+> milestone, with `test_budget.py` asserting the blocked call's provider is
+> never invoked. This acceptance criterion is not unmet and does not need
+> reimplementing here — M4's runner only needs to construct a `BudgetGuard`
+> from the study's `max_cost_usd` and pass it to each `ModelClient` it
+> creates.
 
 **Acceptance:** 20 personas × 1 scenario against `artefacts/bad_onboarding.html`
 completes offline via FakeProvider; all transcripts and findings persist; kill

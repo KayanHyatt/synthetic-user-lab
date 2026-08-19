@@ -1,0 +1,34 @@
+# Per-token USD prices, keyed by provider then model.
+#
+# Anthropic rates are the official published per-token prices, taken from the
+# Anthropic pricing table on 2026-06-24 (Claude Opus 5 $5.00/$25.00 per MTok,
+# Claude Sonnet 5 $3.00/$15.00 per MTok, Claude Haiku 4.5 $1.00/$5.00 per
+# MTok — divide the published $/1M figures by 1_000_000 for the per-token
+# rate below).
+#
+# OpenAI and Gemini sections are intentionally left empty: this repo has no
+# authoritative current rate card for either provider. `sul.pricing.price_for`
+# raises UnknownModelError for any (provider, model) not listed here rather
+# than defaulting to 0.0 — fill these in from the vendor's published pricing
+# before routing real spend through those adapters.
+anthropic:
+  claude-opus-5:
+    input: 0.000005
+    output: 0.000025
+  claude-sonnet-5:
+    input: 0.000003
+    output: 0.000015
+  claude-haiku-4-5:
+    input: 0.000001
+    output: 0.000005
+
+openai: {}
+
+gemini: {}
+
+# FakeProvider never spends real money; priced at zero so cost math has a
+# home for it without a special case in the caller.
+fake:
+  fake-1:
+    input: 0.0
+    output: 0.0

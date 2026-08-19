@@ -4,10 +4,19 @@ version = "0.1.0"
 description = "A research harness that runs panels of LLM-simulated users against product artefacts."
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.122.0",
+    "google-genai>=2.18.1",
+    "httpx>=0.28.1",
+    "openai>=3.3.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
     "sqlalchemy>=2.0.52",
+    "typer>=0.27.1",
 ]
+
+[project.scripts]
+sul = "sul.cli:app"
 
 [dependency-groups]
 dev = [
@@ -16,6 +25,7 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
     "pre-commit>=4.0",
+    "types-pyyaml>=6.0",
 ]
 
 [build-system]
@@ -38,6 +48,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
+asyncio_mode = "auto"
 markers = [
     "slow: tests that take longer than normal to run",
     "llm: would require a live provider call; must never actually run one — use FakeProvider instead",
