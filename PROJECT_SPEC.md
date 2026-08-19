@@ -244,6 +244,43 @@ segments:
 byte-identical output. Changing only the seed changes the personas but not the
 segment proportions beyond tolerance.
 
+> **M3 implementation note.** This section's example YAML uses a bare list
+> for two different meanings — `tech_comfort: [high, medium]` reads as "pick
+> one", `goals: ["evaluate quickly", "avoid setup work"]` reads as "hold
+> both" — and a bare list cannot mean both. `configs/panel.example.yaml`
+> instead requires an explicit wrapper on every attribute value: `choice:
+> [...]` (pick one), `all: [...]` (hold all), `sample: {from: [...], k: N}`
+> (pick N); a bare scalar (`patience: low`) is unambiguous and stays legal.
+> **A bare list is a validation error, not a defaulted meaning** —
+> `sul.personas.archetypes.AttributeSpec._coerce` rejects it, naming all
+> three wrappers. The reasoning: a persona holding one goal instead of two is
+> still a plausible persona, so nothing downstream would ever flag the
+> mistake — it would only ever surface as unexplained noise in M6's validity
+> numbers. Target proportions are declared in exactly one place,
+> `SegmentSpec.weight`; the attribute wrappers are unweighted and
+> `extra="forbid"` rejects a `weight` key on one, so there is no second place
+> for a proportion to drift from the first. Segment *counts* are apportioned
+> from those weights by the deterministic largest-remainder method
+> (`sul.personas.sampler._apportion_counts`) rather than drawn at random, which
+> is what makes "changes the personas but not the segment proportions"
+> exact rather than merely within-tolerance. Every other random draw is keyed
+> per `(panel seed, persona index, attribute key)`
+> (`sul.personas.sampler._attribute_rng`), not pulled sequentially off one
+> shared stream — inserting an unrelated attribute into the YAML cannot
+> reshuffle any other attribute's realised value
+> (`tests/test_persona_sampler.py::test_attribute_insertion_does_not_reshuffle_other_attributes`).
+> `Panel.config_yaml` (`sul.personas.persistence.persist_panel`) stores a
+> *resolved config snapshot* re-serialised from the validated `PanelConfig` —
+> never the raw source YAML file — so a comment-borne or stray-key research
+> goal cannot survive into the row even by accident; round-tripping
+> sample→persist→rebuild-from-only-`Panel.seed`-and-`Panel.config_yaml` is
+> itself an acceptance test (`tests/test_persona_persistence.py`), bought
+> early against the same failure mode M6's reproducibility check exists to
+> catch. `render_card` (`sul.personas.cards`) takes a `SampledPersona` and
+> nothing else — no ORM object, no goal/topic/brief parameter — because
+> `SampledPersona` cannot express a research goal or a sibling persona in the
+> first place.
+
 ---
 
 ### M4 — Orchestrator (the core)
@@ -274,6 +311,66 @@ Async runner over the persona × scenario grid.
 > reimplementing here — M4's runner only needs to construct a `BudgetGuard`
 > from the study's `max_cost_usd` and pass it to each `ModelClient` it
 > creates.
+
+> **M4 isolation carry-forward (recorded during M3, unimplemented until this
+> milestone).** M3 built the persona-card half of context isolation
+> (`sul.personas.cards.render_card`, keyed only off `SampledPersona`) and
+> deliberately left the rest for here, since M3 makes no LLM calls and builds
+> no prompt sent to a provider. When M4 is implemented:
+>
+> - Every persona-bound prompt is built from `PersonaContext`
+>   (`sul.schemas.isolation`) and nothing else — no ORM `Study`, `Panel`, or
+>   sibling `Persona` crosses into a prompt builder, even read-only, even
+>   "just for the id". If a builder needs a field `PersonaContext` doesn't
+>   carry, that is a spec conversation, not a new keyword argument.
+> - `lazy="raise"` on `Persona.panel`/`Panel.study` is a tripwire, not a
+>   guarantee — it stops attribute traversal, not a fresh `session.query`, a
+>   `selectinload`, or the goal arriving as a plain string named `topic` /
+>   `brief` / `context` / `framing`. The string channel is the one to assume
+>   leaks.
+> - Add a test that captures the exact string(s) sent to the provider for a
+>   persona turn and asserts the study goal text and every other persona's
+>   name/attributes are absent, using sentinels distinctive enough to
+>   substring-match (`ZZGOALZZ`, not `"usability"`) — test the rendered
+>   prompt, not the object graph.
+> - The moderator is a documented, deliberate goal-laundering channel: it
+>   sees the goal and writes the questions personas answer, so the goal
+>   reaches personas indirectly through those questions. That is the correct
+>   design here — real moderators do exactly this — but the raw goal string
+>   is never passed through verbatim.
+> - Moderator adaptivity is the cross-persona leak: if one moderator instance
+>   runs the whole panel and adapts follow-ups from what it has heard,
+>   persona B is seeing persona A through the questions. Moderator state —
+>   and any transcript/history list — is scoped **per persona session**, not
+>   constructed once and shared or appended to across a loop over personas.
+>   Test it: run two sessions where the first says something distinctive, and
+>   assert that string never appears in the second's prompts.
+> - Per-call seed derives deterministically from `(study seed, persona id,
+>   turn index)` — never `uuid4`, wall-clock time, or dict/set iteration
+>   order. If persona identity isn't in the seed and prompts are similar,
+>   every persona answers identically under `FakeProvider`, the panel looks
+>   like one person, and the isolation tests pass vacuously because there is
+>   nothing distinctive left to leak.
+> - Agents receive an injected `ModelClient`
+>   (`sul.providers.client.ModelClient`) and never construct a provider
+>   themselves — no agent takes `provider: Provider | None = None` and
+>   defaults to a real one. One logical turn writes exactly one `ModelCall`
+>   row (two if a repair turn fires); personas are never batched into a
+>   single call to save tokens, since per-persona attribution is load-bearing
+>   for M5 and M6.
+> - Persona output is a Pydantic model parsed through M2's structured-output
+>   path (one repair turn, no second repair layer, no fallback defaults, no
+>   post-hoc string cleaning of a response).
+> - Every quote an Analyst attributes to a persona (M4/M5) must be verified
+>   against the stored transcript before it can land in a `Finding` — exact
+>   substring or an explicit span reference, rejected loudly on mismatch.
+>   Trusting the model's own quoting is the easiest thing in this project to
+>   fake convincingly.
+> - Prompt templates live in files, not string literals scattered through
+>   agent code (M3 already does this for the persona card:
+>   `sul/personas/templates/persona_card.v1.j2`, named by
+>   `CARD_TEMPLATE_VERSION`); whatever identifies the template version is
+>   recorded with the call.
 
 **Acceptance:** 20 personas × 1 scenario against `artefacts/bad_onboarding.html`
 completes offline via FakeProvider; all transcripts and findings persist; kill

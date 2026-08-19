@@ -120,3 +120,22 @@ findings — that is enforced structurally, not just by prompt wording:
   (`sul.enums.AgentRole` vs `sul.enums.TurnRole`): the Analyst can make model
   calls, but never writes a transcript turn, since it never talks to a
   persona.
+
+## Persona pipeline (M3)
+
+`sul.personas` is a pure, offline function: `(PanelConfig, seed) ->
+SampledPanel`. `sul.personas.archetypes.PanelConfig` parses
+`configs/panel.example.yaml`-shaped documents (`extra="forbid"` at every
+level, so a research-goal-shaped key is a load-time error, not a silently
+ignored one); `sul.personas.sampler.sample_panel` apportions segment counts
+deterministically by weight (largest remainder, no RNG), then draws each
+attribute from its own `(panel seed, persona index, attribute key)`-keyed
+substream so inserting one attribute can never reshuffle another's value;
+`sul.personas.cards.render_card` turns a `SampledPersona` — and nothing
+else — into the natural-language card that is that persona's system prompt.
+`sul.personas.persistence.persist_panel` writes the result into `Panel` /
+`Persona`, storing a resolved config snapshot (never the raw source YAML) on
+`Panel.config_yaml`; `rebuild_sampled_panel` reverses that from only
+`Panel.seed`/`Panel.config_yaml`, which is M6's reproducibility criterion
+bought early. M4's `PersonaContext` reads `Persona.card_text` and nothing
+else this pipeline produced.

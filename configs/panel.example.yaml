@@ -1,0 +1,42 @@
+# Persona population definition (spec §M3). This file never mentions the
+# research goal or a scenario — those live in study.example.yaml (§M4). See
+# the M3 implementation note in PROJECT_SPEC.md for why attribute values use
+# explicit choice:/all:/sample: wrappers instead of the spec's illustrative
+# bare lists.
+seed: 42
+size: 40
+segments:
+  - name: time_poor_professional
+    weight: 0.35
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low
+      goals:
+        all: ["evaluate quickly", "avoid setup work"]
+      constraints:
+        all: ["will not read docs", "on mobile"]
+
+  - name: cost_sensitive_student
+    weight: 0.4
+    attributes:
+      tech_comfort:
+        choice: [medium, low]
+      patience: medium
+      goals:
+        all: ["find the cheapest plan", "avoid hidden fees"]
+      constraints:
+        sample:
+          from: ["on a tight budget", "shares a device", "limited data plan"]
+          k: 2
+
+  - name: skeptical_evaluator
+    weight: 0.25
+    attributes:
+      tech_comfort:
+        choice: [high, medium, low]
+      patience: low
+      goals:
+        all: ["decide if this is trustworthy", "compare against competitors"]
+      constraints:
+        all: ["will not enter payment info without proof it's needed"]
