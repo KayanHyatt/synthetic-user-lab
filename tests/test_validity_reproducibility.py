@@ -111,3 +111,13 @@ async def test_fakeprovider_same_seed_repeats_are_exactly_reproducible(
     assert section.finding_count_variance == 0.0
     assert section.mean_top5_cluster_jaccard == 1.0
     assert "structurally guaranteed" in section.caveat
+
+    # Seed sensitivity is the one number in this section that ISN'T
+    # structurally forced -- different seeds genuinely produce different
+    # FakeProvider content (the hash includes the seed). Pinned here as
+    # `< 1.0` (a real, non-trivial value observed from `make.ps1 validate`'s
+    # actual output was 0.0) so a regression that silently clamps this to
+    # the same "always 1.0" the same-seed check expects would be caught --
+    # an earlier version of this test only asserted the same-seed fields and
+    # never touched `seed_sensitivity` at all.
+    assert section.seed_sensitivity.mean_top5_cluster_jaccard < 1.0

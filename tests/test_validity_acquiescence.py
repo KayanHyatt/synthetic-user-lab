@@ -9,9 +9,11 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from sul.enums import ArtefactKind
+from sul.providers.base import Completion, Message
 from sul.providers.fake import FakeProvider
 from sul.validity.acquiescence import agreement_rate, run_acquiescence_probe
 from sul.validity.schemas import FramingProbeContext
+from tests.support.scripted_provider import ScriptedProvider, text_completion
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,6 +56,50 @@ def test_framing_probe_context_cannot_carry_a_research_goal() -> None:
             framed_question="q",
             research_goal="ZZGOALZZ",  # type: ignore[call-arg]
         )
+
+
+def _framing_aware_script(
+    index: int,
+    messages: list[Message],
+    model: str,
+    seed: int | None,
+    response_schema: object,
+) -> Completion:
+    """A controlled, content-aware responder -- not `FakeProvider`'s
+    uniform-random draw: it reads the actual prompt text and answers
+    "disagree" to the negatively-framed question, "agree" to everything
+    else. This is what a genuinely, deliberately acquiescence-biased panel
+    would look like, run through the real `run_acquiescence_probe` pipeline
+    (real materialize, real `ModelClient` dispatch, real aggregation) rather
+    than a synthetic list fed straight to `agreement_rate`.
+    """
+    prompt = messages[-1].content
+    agreement = "disagree" if "unclear about the pricing" in prompt else "agree"
+    return text_completion(f'{{"agreement": "{agreement}"}}', model=model)
+
+
+@pytest.mark.asyncio
+async def test_a_content_aware_biased_provider_is_detected_through_the_real_pipeline(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """The real-harness-path version of the pure-function negative control
+    above: `_framing_aware_script` never sees "agreement_rate" or a
+    synthetic list, only prompts built by `render_framing_probe_prompt` and
+    dispatched by the real `ModelClient`. If the aggregation wiring in
+    `run_acquiescence_probe` were broken (wrong bucket, dropped reply, wrong
+    rate formula), this would not land on the maximum gap.
+    """
+    result = await run_acquiescence_probe(
+        session_factory,
+        provider=ScriptedProvider(script=_framing_aware_script),
+        provider_name="fake",
+        model="fake-1",
+        panel_path="tests/fixtures/panel_2.yaml",
+        base_path=REPO_ROOT,
+    )
+    assert result.positive_agree_rate == 1.0
+    assert result.negative_agree_rate == 0.0
+    assert result.agreement_gap == 1.0
 
 
 @pytest.mark.asyncio

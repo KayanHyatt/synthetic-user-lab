@@ -669,6 +669,29 @@ states at least two concrete, measured weaknesses.
 > genuinely offline-meaningful — it measures how much the clustering/ranking
 > pipeline amplifies input variation, not panel realism.
 >
+> **Deviation 4a: reproducibility always runs against `FakeProvider`,
+> unconditionally, never against whatever provider backs the other four
+> checks.** `CassetteTransport` matches on `method + scrubbed_url +
+> canonical_body` and replays exactly one recorded response per key.
+> Same-seed, N-repeat reproducibility sends N *identical* requests (`seed`
+> itself is never part of the wire body, so it can't disambiguate them even
+> if it mattered) — recording collapses to one surviving response (each
+> repeat's write overwrites the last) and replay returns that one response N
+> times. A cassette cannot carry real same-seed-repeat variance even in
+> principle; this is a structural property of one-key-one-response replay,
+> not a gap specific to `FakeProvider`. Extending `CassetteTransport` to
+> support multiple responses per key with ordinal replay was considered and
+> declined for this milestone (an M2 change, needing its own cross-process
+> determinism test and explicit sign-off not given in advance).
+> `sul.validity.harness.run_validity_harness` therefore constructs its own
+> `FakeProvider()` for `measure_reproducibility` regardless of the `provider`
+> it was itself given — proven by `tests/test_validity_harness
+> ::test_reproducibility_never_touches_the_harness_level_provider`, which
+> passes a provider that raises on any call and confirms reproducibility
+> still completes. `REPRODUCIBILITY_CAVEAT` (`sul.validity.model`) says this
+> explicitly: this check never runs against a real or cassette-backed
+> provider, permanently, not just today.
+>
 > **Deviation 5: cassette-backed replay is supported as a first-class
 > parameter, but `sul validate` never constructs one.** Every §M6.2–§M6.5
 > function takes its `LLMProvider` as a parameter — `FakeProvider` and a
@@ -704,6 +727,20 @@ states at least two concrete, measured weaknesses.
 > checks are named in a separate section and explicitly not counted toward
 > them, since "we couldn't reach a real provider" is a limitation of running
 > the harness offline, not a measured property of the synthetic panel.
+>
+> **Deviation 6: `docs/validity_report.md` and `docs/limitations.md` are
+> committed generated files.** M5 gitignored `reports/` as ad hoc,
+> per-study output; these two are not that — §M6 names them as the
+> milestone's deliverables ("`make validate` runs five checks and writes
+> `docs/validity_report.md`"; "docs/limitations.md states at least two
+> concrete, measured weaknesses"), the same footing as the already-committed
+> `docs/architecture.md`, not a run artefact a reviewer is expected to
+> regenerate before reading. The cost of this reading: `make validate`
+> dirties the working tree on every run (a fresh `sul.db`'s FakeProvider
+> content is deterministic byte-for-byte, so re-running produces the same
+> two files unless the harness itself changed — but git still sees them as
+> modified until diffed). Regenerated and committed as part of this
+> milestone's own commit whenever `sul.validity`'s output changes.
 >
 > **Dependencies.** None. Variance/Jaccard use stdlib `statistics`/set
 > arithmetic; `numpy` was already reachable (via `scikit-learn`, already

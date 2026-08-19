@@ -15,11 +15,16 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
+from sul import models
+from sul.enums import ArtefactKind, FindingCategory, RunStatus, TurnRole
 from sul.providers.fake import FakeProvider
+from sul.validity.data import load_finding_rows
 from sul.validity.discriminative import (
+    blocker_confusion_count,
     is_material_difference,
     run_discriminative_validity,
 )
+from tests.support.report_factory import build_report_fixture
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,6 +49,93 @@ def test_is_material_difference_rejects_a_small_absolute_gap() -> None:
     difference at this panel's size -- the rule must not fire on it.
     """
     assert is_material_difference(1, 0) is False
+
+
+def _build_minimal_good_study(session: Session) -> int:
+    """A second, minimal study with exactly one BLOCKER finding -- not
+    `report_factory.build_single_finding_fixture`, which hardcodes the same
+    `content_hash="h1"` `build_report_fixture` already used in this test:
+    the two collide on `Artefact.content_hash`'s uniqueness constraint if
+    called in the same session (the same class of bug the real `sul
+    validate` invocation hit -- see `tests/test_cli_validate.py`). This
+    inlines the same shape with a distinct hash rather than adding a second
+    general-purpose fixture builder for one call site.
+    """
+    artefact = models.Artefact(
+        name="good.html", kind=ArtefactKind.HTML, content_hash="h2", body="<html/>"
+    )
+    session.add(artefact)
+    session.flush()
+    study = models.Study(
+        name="good study",
+        research_goal="goal",
+        artefact_id=artefact.id,
+        config_hash="c2",
+        git_sha="f" * 40,
+    )
+    session.add(study)
+    session.flush()
+    scenario = models.Scenario(study_id=study.id, task="task", questions=[])
+    panel = models.Panel(study_id=study.id, seed=1, size=1, config_yaml="")
+    session.add_all([scenario, panel])
+    session.flush()
+    persona = models.Persona(
+        panel_id=panel.id, name="Solo", segment="seg", attributes={}, card_text="c"
+    )
+    session.add(persona)
+    session.flush()
+    run = models.Run(
+        study_id=study.id,
+        persona_id=persona.id,
+        scenario_id=scenario.id,
+        status=RunStatus.COMPLETED,
+    )
+    session.add(run)
+    session.flush()
+    turn = models.Turn(
+        run_id=run.id, role=TurnRole.PERSONA, ordinal=0, content="It was fine."
+    )
+    session.add(turn)
+    session.flush()
+    finding = models.Finding(
+        run_id=run.id,
+        category=FindingCategory.BLOCKER,
+        severity=2,
+        summary="No problems reported.",
+        evidence_turn_id=turn.id,
+    )
+    session.add(finding)
+    session.commit()
+    return study.id
+
+
+def test_material_difference_is_wired_through_real_db_loaded_rows(
+    session: Session,
+) -> None:
+    """Not a synthetic in-memory list: `bad_rows`/`good_rows` here are loaded
+    by `load_finding_rows`, the same SQL path `run_discriminative_validity`
+    itself uses, from two studies persisted through the database. This is
+    the "real harness path" version of the pure-function test above -- it
+    proves the SQL query, `FindingRow` construction, and the comparison
+    function are wired together correctly, not just that the comparison
+    function is correct in isolation.
+
+    `build_report_fixture` (M5's own fixture builder, reused rather than
+    forked) gives Ana (2 BLOCKER findings) + Ben (1 BLOCKER finding) = 3; the
+    minimal good study above gives exactly 1. 3 vs 1 is a deliberate, known
+    material gap (>= 1.5x and >= 2 absolute).
+    """
+    bad_fixture = build_report_fixture(session)
+    good_study_id = _build_minimal_good_study(session)
+
+    bad_rows = load_finding_rows(session, study_id=bad_fixture.study_id)
+    good_rows = load_finding_rows(session, study_id=good_study_id)
+
+    bad_count = blocker_confusion_count(bad_rows)
+    good_count = blocker_confusion_count(good_rows)
+    assert bad_count == 3
+    assert good_count == 1
+    assert is_material_difference(bad_count, good_count) is True
 
 
 @pytest.mark.asyncio

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
 from sul.enums import ArtefactKind
+from sul.providers.base import Completion, Message
 from sul.providers.fake import FakeProvider
 from sul.validity.position import first_option_share, run_position_bias_probe
 from sul.validity.schemas import ChoiceProbeContext
+from tests.support.scripted_provider import ScriptedProvider, text_completion
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,6 +52,54 @@ def test_choice_probe_context_cannot_carry_a_research_goal() -> None:
             options=("A", "B"),
             research_goal="ZZGOALZZ",  # type: ignore[call-arg]
         )
+
+
+def _first_option_choosing_script(
+    index: int,
+    messages: list[Message],
+    model: str,
+    seed: int | None,
+    response_schema: type[BaseModel] | None,
+) -> Completion:
+    """A controlled responder that always picks whatever option is listed
+    first -- content-blind, position-driven, exactly the failure mode §M6.4
+    exists to catch. Reads the real rendered prompt (`render_choice_probe
+    _prompt`'s "1. {option}" line) rather than assuming a fixed option
+    identity, and replies through the real run-specific `Literal` schema
+    `build_choice_probe_schema` built, the same as a real provider would.
+    """
+    prompt = messages[-1].content
+    match = re.search(r"^1\. (.+)$", prompt, re.MULTILINE)
+    assert match is not None, f"no numbered option found in prompt:\n{prompt}"
+    first_option = match.group(1).strip()
+    assert response_schema is not None
+    reply = response_schema(choice=first_option)
+    return text_completion(reply.model_dump_json(), model=model)
+
+
+@pytest.mark.asyncio
+async def test_a_content_blind_position_biased_provider_is_detected_through_pipeline(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """The real-harness-path version of the pure-function negative control
+    above: `_first_option_choosing_script` never sees `first_option_share`
+    or a synthetic list, only prompts built by `render_choice_probe_prompt`
+    and dispatched by the real `ModelClient`, through the real per-call
+    `Literal`-constrained schema. If the shuffling/attribution wiring in
+    `run_position_bias_probe` were broken, this would not land on maximal
+    shift.
+    """
+    result = await run_position_bias_probe(
+        session_factory,
+        provider=ScriptedProvider(script=_first_option_choosing_script),
+        provider_name="fake",
+        model="fake-1",
+        panel_path="tests/fixtures/panel_2.yaml",
+        base_path=REPO_ROOT,
+    )
+    assert result.first_position_share_original_order == 1.0
+    assert result.first_position_share_reversed_order == 0.0
+    assert result.preference_shift == 1.0
 
 
 @pytest.mark.asyncio

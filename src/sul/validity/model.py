@@ -22,9 +22,15 @@ REPRODUCIBILITY_CAVEAT = (
     "structurally guaranteed by FakeProvider's deterministic hashing "
     "(derive_seed feeds a pure sha256-keyed synthesis, replayed identically "
     "for the same seed) -- this measures the harness's own determinism, not "
-    "the panel's. A real provider run may show non-zero variance; that "
-    "would be expected, not a failure (PROJECT_SPEC.md §M6.1: "
-    "'non-zero variance is fine; unreported variance is not')."
+    "the panel's. This check always runs against FakeProvider, permanently, "
+    "regardless of what provider backs the other four checks: "
+    "CassetteTransport replays one recorded response per request, so a "
+    "cassette cannot carry real same-seed-repeat variance even in "
+    "principle (N identical requests -> one surviving recorded response, "
+    "replayed N times). A live, uncassetted run against a real provider "
+    "could show non-zero variance -- that would be expected, not a failure "
+    "(PROJECT_SPEC.md §M6.1: 'non-zero variance is fine; unreported "
+    "variance is not') -- but this harness never performs one."
 )
 
 
