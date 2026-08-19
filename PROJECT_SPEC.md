@@ -266,7 +266,7 @@ Async runner over the persona × scenario grid.
   any persona-bound payload.
 
 > **M4 implementation note.** The budget kill switch described above already
-> landed in M2 (`<commit-ref-placeholder>`, see the M2 implementation note
+> landed in M2 (`fc82b72`, see the M2 implementation note
 > above): `sul.providers.budget.BudgetGuard` is a pre-call gate inside
 > `ModelClient._dispatch`, checked before every dispatch regardless of
 > milestone, with `test_budget.py` asserting the blocked call's provider is
