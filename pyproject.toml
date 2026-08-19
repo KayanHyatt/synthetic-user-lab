@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
+    "scikit-learn>=1.9.0",
     "sqlalchemy>=2.0.52",
     "typer>=0.27.1",
 ]
@@ -46,6 +47,13 @@ include = ["*.py", "*.pyi", "**/pyproject.toml"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# `typer.Option`/`typer.Argument` calls in a signature default are the
+# documented Typer pattern (`sul report`'s CLI options, M5) -- immutable,
+# constructed once at import time, not the mutable-default footgun B008
+# exists to catch.
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
@@ -66,3 +74,9 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = "sul.*"
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# scikit-learn ships no type stubs (PROJECT_SPEC.md §M5 deviation). Scoped to
+# this one module, not a global relaxation.
+module = "sklearn.*"
+ignore_missing_imports = true

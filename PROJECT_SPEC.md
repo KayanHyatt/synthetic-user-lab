@@ -155,7 +155,19 @@ as optional bookkeeping.
 > Analyst writes `ModelCall` rows with no corresponding `Turn` — without
 > `run_id` here, `sul cost <study_id>` (M2's acceptance criterion) would
 > silently miss Analyst spend. No `Evidence` table and no Alembic were added;
-> both remain out of scope for M1.
+> both remain out of scope for M1. A single `evidence_turn_id` per `Finding`
+> (not a list, not a separate join table) is enough precisely because
+> "many quotes, one theme" is represented by *many `Finding` rows sharing one
+> `cluster_id`*, not by one `Finding` row holding many evidence turns —
+> `cluster_id` is what makes the single-evidence-turn design non-lossy.
+> **Amended in M5:** that grouping is computed at report-render time over the
+> existing `Finding` rows (`sul.analysis.clustering`), not read off a stored
+> `cluster_id` value — M5's own deviation note explains why the column stays
+> `NULL`. The reasoning above still holds: nothing about it depended on
+> `cluster_id` being *persisted*, only on grouping-by-theme existing as a
+> concept applied over many single-evidence-turn `Finding` rows, which it
+> still does. A reader landing on this note should not conclude clustering is
+> persisted — see §M5.
 
 **Acceptance:** tests create a full object graph and query it; `docs/architecture.md` contains an ER diagram (Mermaid is fine).
 
@@ -391,6 +403,151 @@ the process at 50% and re-run — it completes without duplicate `Run` rows.
 **Acceptance:** `sul report <study_id>` produces a report in which **every**
 finding links to at least one transcript turn. Add a test that fails if any
 rendered finding has zero evidence.
+
+> **M5 implementation note.** No LLM call anywhere in this milestone — no new
+> `ModelClient`, no seed derivation, no `ModelCall` row, no budget
+> interaction. `sul.analysis.clustering.cluster_findings` and
+> `sul.analysis.ranking.rank_clusters` are pure, offline aggregation over
+> `Finding`/`Turn` rows M4 already wrote; `sul.report.build.build_report`
+> does the only database access in this milestone, and it is read-only (see
+> below).
+>
+> **Clustering.** TF-IDF (`sklearn.feature_extraction.text.TfidfVectorizer`)
+> + `AgglomerativeClustering(n_clusters=None, distance_threshold=..., metric
+> ="cosine", linkage="average")` over `Finding.summary` text.
+> `sul.analysis.config.ClusteringConfig` (`extra="forbid"`) holds
+> `distance_threshold` (default `0.6`), `metric`, `linkage`, and the
+> vectorizer's `stop_words`/`min_df` — a config model, not literals in the
+> clustering module, per this project's own convention for tunables — with
+> `configs/clustering.example.yaml` documenting the defaults and `sul report
+> --clustering-config PATH` able to override them. The default threshold was
+> chosen *from* `tests/test_clustering.py`'s discrimination fixture (built
+> first), not picked and validated after: near-duplicate paraphrases must
+> merge, distinct problems phrased in the same uniform "Analyst voice" must
+> stay apart. Both directions pass at 0.6, but the margin is asymmetric, and
+> `sul.analysis.clustering`'s module docstring documents why — TF-IDF cosine
+> over Analyst-authored text partly measures the Analyst's phrasing
+> uniformity, not just the panel's actual agreement. That is a property of
+> the method, not a bug in this implementation, and is exactly the kind of
+> thing M6's validity harness exists to measure.
+>
+> Degenerate inputs are handled explicitly (zero findings, one finding, an
+> all-stop-word corpus, and — found only by the cross-process determinism
+> test against `FakeProvider`'s synthesised summaries, not anticipated up
+> front — a single summary short/generic enough to vectorise to an all-zero
+> row even though the corpus as a whole has vocabulary, which `sklearn`'s
+> cosine metric rejects outright). Cluster *numbering* is renumbered after
+> fitting by the ascending `Finding.id` of each cluster's lowest-id member,
+> read off each member's own attribute rather than its position in the input
+> — `AgglomerativeClustering`'s raw labels are a function of input row order
+> (verified by hand, not assumed), and an earlier version of the stability
+> test used set-equality between a forward and a reversed call, which a
+> small fixture satisfied *by coincidence* even with the renumbering step
+> deliberately broken; the shipped test asserts the renumbering contract
+> directly against a fixture where that coincidence doesn't occur.
+>
+> **Ranking.** `frequency × mean severity`. Frequency counts distinct
+> personas contributing to a cluster, never raw `Finding` rows, so one
+> persona with two findings in a cluster cannot manufacture the appearance
+> of consensus. Mean severity is a mean *of per-persona means*, not a flat
+> mean over findings, for the same reason — a flat mean would give that same
+> persona double weight in the severity half of the formula while the
+> frequency half normalises them to one unit, so the two halves would
+> disagree about what a unit is. Rendered labelled "mean severity
+> (model-assigned, 1-5; averaged per persona)" — it is the Analyst's
+> assessment, not a measurement. Ties break on the lowest member `Finding.id`,
+> never dict/set iteration order. Segment breakdown lists every segment
+> present in the study for a cluster, including 0/N — omitting a
+> zero-frequency segment would read as "not measured" rather than "measured,
+> nobody in that segment reported it".
+>
+> **Category is not pre-partitioned.** Clustering runs globally across all
+> findings regardless of `FindingCategory`; partitioning by category first
+> would make theme structure depend on the Analyst's categorisation
+> consistency and would prevent one underlying problem from clustering
+> across two categories. Each cluster instead carries its modal category
+> plus a `category_disagreement` flag when members disagree — a signal, not
+> noise to suppress.
+>
+> **Deviation: `Finding.cluster_id` (declared in M1) is never written.**
+> `sul report` computes clustering fresh on every invocation and never
+> persists it. A persisted `cluster_id` would need its own
+> config-provenance record to detect staleness against a re-cluster with
+> different settings, or a flag gating re-clustering — either way, more
+> machinery than this milestone's acceptance criterion needs, and either way
+> `sul report` becomes a command that can silently rewrite a completed
+> study's own rows, which is in tension with "never delete, merge or rewrite
+> a `Finding` row." `tests/test_report_build.py
+> ::test_cluster_id_is_never_written_to_the_database` and
+> `tests/test_cli_report.py::test_sul_report_does_not_modify_the_database_file`
+> (the latter hashing the whole database file before/after — a stronger
+> check than inspecting one column) both guard this. See the amended M1 note
+> above for why the original single-`evidence_turn_id` design doesn't depend
+> on this column being persisted.
+>
+> **Persona identity comes from `Finding.run_id`, not from
+> `evidence_turn_id -> Turn -> Run -> Persona`.** The two paths agree today
+> only because M4 scopes the Analyst to one run at a time;
+> `sul.report.build.build_report` reads `Finding.run_id` directly for
+> persona/segment attribution and separately asserts the resolved evidence
+> turn's own `run_id` matches, rather than assuming it.
+>
+> **Segments are reached by an explicit column join**
+> (`Persona.segment`/`Panel.study_id`/`Persona.panel_id` are plain
+> columns/FKs), never by walking `Persona.panel` or `Panel.study`, which
+> stay `lazy="raise"` (unchanged from M1/M4).
+>
+> **Rendering.** One `sul.report.model.ReportModel` (`extra="forbid"`
+> throughout), rendered to both formats by `sul.report.markdown` and
+> `sul.report.html` — no field on it is ever populated from wall-clock time,
+> hostname, cwd, an absolute path, or runtime introspection beyond the one
+> deliberately-recorded `sklearn.__version__` string; there is no
+> `generated_at` field. Cross-process byte-stability
+> (`tests/test_report_determinism.py`) is checked via two separate `python`
+> invocations of `tests/support/run_report_script.py` under different
+> `PYTHONHASHSEED`, not by rendering an identical in-memory `ReportModel`
+> twice in one process — a same-process check cannot catch a wall-clock- or
+> iteration-order-shaped defect, since the value is already fixed by the
+> time both renders happen. `Turn.content` is escaped per format: HTML uses
+> Jinja `autoescape=True` (the one correct mechanism for HTML); Markdown has
+> no single escaping mechanism, so every quote is wrapped in a fenced code
+> block whose backtick-fence length is chosen longer than the longest
+> backtick run already in the quote (`sul.report.markdown._fence`) — inside
+> a fenced block CommonMark treats the content as literal, so `#`, `>`, `|`,
+> backticks and embedded newlines never need per-character escaping.
+> `Finding.summary` (the Analyst's paraphrase) is rendered as plain
+> prose, separately labelled, and is never wrapped in a quote or attributed
+> to a persona; it does not get the same fencing treatment as the verbatim
+> quote, since it is expected to be short single-line prose rather than
+> arbitrary model output — a residual risk if that assumption is ever wrong,
+> noted rather than silently accepted. Long quotes are kept whole in both
+> formats; HTML collapses them behind `<details>` past 400 characters,
+> Markdown has no equivalent and keeps them inline — the report never
+> excerpts a quote, since deciding what to cut is exactly the kind of
+> judgement call this project keeps out of model hands.
+>
+> **A standing caveat** ("this panel is LLM-simulated, quotes are model
+> output, not people") renders in both formats
+> (`sul.report.model.SIMULATED_PANEL_CAVEAT`) — not named by this section's
+> text, added because the report is the artefact most likely to be mistaken
+> for real research, and the README/guardrail constraint against overclaiming
+> applies to it specifically.
+>
+> **`sul report <study_id>`** (`src/sul/cli.py`) writes both formats to
+> deterministic paths (`{out-dir}/study_{id}_report.{md,html}`, default
+> `--out-dir reports/`), prints the resolved paths, and exits non-zero on an
+> unknown study id. `--include-failed` includes `FAILED` (not just
+> `COMPLETED`) runs; `PENDING`/`RUNNING` runs are always excluded (non-
+> terminal). The report always states how many runs were excluded and in
+> which status — never a silent denominator.
+>
+> **Dependencies.** `scikit-learn` added (`pyproject.toml`), with a
+> `[[tool.mypy.overrides]]` entry scoped to `sklearn.*`
+> (`ignore_missing_imports = true`, no type stubs shipped) — not a global
+> mypy relaxation. `.\make.ps1 check` needed no other configuration change.
+> `jinja2` was already a direct dependency (M2); `sul.report` is a new
+> consumer of it, not a new dependency. `reports/` added to `.gitignore` as
+> a generated-output directory, the same treatment as `*.db`.
 
 ---
 

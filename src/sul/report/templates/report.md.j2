@@ -1,0 +1,40 @@
+# {{ report.study_name }} — Synthetic User Lab report
+
+> {{ caveat }}
+
+- Study id: {{ report.study_id }}
+- Personas with a completed run (denominator for every fraction below): {{ report.total_personas }}
+- Included runs: {{ report.included_run_count }}
+{% for exc in report.excluded_runs %}
+- Excluded runs ({{ exc.status }}): {{ exc.count }}
+{% endfor %}
+- Total findings: {{ report.total_findings }}
+- Clustering: distance_threshold={{ report.clustering_distance_threshold }}, metric={{ report.clustering_metric }}, linkage={{ report.clustering_linkage }}, scikit-learn {{ report.sklearn_version }}
+
+{% if not report.clusters %}
+No findings were recorded for the runs included in this report.
+{% endif %}
+{% for cluster in report.clusters %}
+## Cluster {{ cluster.cluster_id }}: {{ cluster.title }}
+
+- Category: {{ cluster.modal_category.value }}{% if cluster.category_disagreement %} (members disagree on category){% endif %}
+- Frequency: {{ cluster.frequency }}/{{ cluster.denominator }} distinct personas
+- Mean severity (model-assigned, 1-5; averaged per persona): {{ "%.2f"|format(cluster.mean_severity) }}
+
+### Segment breakdown
+
+{% for seg in cluster.segment_breakdown %}
+- {{ seg.segment }}: {{ seg.frequency }}/{{ seg.denominator }}
+{% endfor %}
+
+### Evidence
+
+{% for item in cluster.evidence %}
+**Run {{ item.run_id }}, {{ item.persona_name }} ({{ item.segment }})** — transcript turn {{ item.evidence_turn_ordinal }}
+
+Analyst summary: {{ item.summary }}
+
+{{ item.quote | fence }}
+
+{% endfor %}
+{% endfor %}

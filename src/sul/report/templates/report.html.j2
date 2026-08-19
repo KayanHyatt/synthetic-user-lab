@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ report.study_name }} — Synthetic User Lab report</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; }
+  .caveat { border: 1px solid #b58900; background: #fff8e1; padding: 0.75rem 1rem; border-radius: 4px; }
+  section.cluster { border-top: 2px solid #ddd; margin-top: 2rem; padding-top: 1rem; }
+  .evidence { border-left: 3px solid #ccc; margin: 0.75rem 0; padding-left: 0.75rem; }
+  .attribution { font-weight: 600; margin-bottom: 0.25rem; }
+  pre.quote { white-space: pre-wrap; word-wrap: break-word; background: #f6f6f6; padding: 0.5rem; border-radius: 4px; }
+  table.segments { border-collapse: collapse; }
+  table.segments td, table.segments th { border: 1px solid #ccc; padding: 0.25rem 0.5rem; text-align: left; }
+  .summary-line { color: #444; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>{{ report.study_name }} — Synthetic User Lab report</h1>
+<p class="caveat">{{ caveat }}</p>
+
+<ul>
+<li>Study id: {{ report.study_id }}</li>
+<li>Personas with a completed run (denominator for every fraction below): {{ report.total_personas }}</li>
+<li>Included runs: {{ report.included_run_count }}</li>
+{% for exc in report.excluded_runs %}
+<li>Excluded runs ({{ exc.status }}): {{ exc.count }}</li>
+{% endfor %}
+<li>Total findings: {{ report.total_findings }}</li>
+<li>Clustering: distance_threshold={{ report.clustering_distance_threshold }}, metric={{ report.clustering_metric }}, linkage={{ report.clustering_linkage }}, scikit-learn {{ report.sklearn_version }}</li>
+</ul>
+
+{% if not report.clusters %}
+<p>No findings were recorded for the runs included in this report.</p>
+{% endif %}
+{% for cluster in report.clusters %}
+<section class="cluster" data-cluster-id="{{ cluster.cluster_id }}">
+<h2>Cluster {{ cluster.cluster_id }}: {{ cluster.title }}</h2>
+<p>Category: {{ cluster.modal_category.value }}{% if cluster.category_disagreement %} (members disagree on category){% endif %}</p>
+<p>Frequency: {{ cluster.frequency }}/{{ cluster.denominator }} distinct personas</p>
+<p>Mean severity (model-assigned, 1-5; averaged per persona): {{ "%.2f"|format(cluster.mean_severity) }}</p>
+
+<h3>Segment breakdown</h3>
+<table class="segments">
+<tr><th>Segment</th><th>Frequency</th></tr>
+{% for seg in cluster.segment_breakdown %}
+<tr><td>{{ seg.segment }}</td><td>{{ seg.frequency }}/{{ seg.denominator }}</td></tr>
+{% endfor %}
+</table>
+
+<h3>Evidence</h3>
+{% for item in cluster.evidence %}
+<div class="evidence" data-finding-id="{{ item.finding_id }}">
+<p class="attribution">Run {{ item.run_id }}, {{ item.persona_name }} ({{ item.segment }}) — transcript turn {{ item.evidence_turn_ordinal }}</p>
+<p class="summary-line">Analyst summary: {{ item.summary }}</p>
+{% if item.quote|length > 400 %}
+<details><summary>Verbatim quote (click to expand)</summary><pre class="quote">{{ item.quote }}</pre></details>
+{% else %}
+<pre class="quote">{{ item.quote }}</pre>
+{% endif %}
+</div>
+{% endfor %}
+</section>
+{% endfor %}
+</body>
+</html>

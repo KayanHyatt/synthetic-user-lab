@@ -1,0 +1,15 @@
+# sul.analysis.config.ClusteringConfig document, loaded by `sul report
+# --clustering-config`. These are also `ClusteringConfig`'s built-in field
+# defaults (PROJECT_SPEC.md §M5) -- this file documents them, it isn't
+# required to run `sul report`.
+#
+# distance_threshold: chosen from tests/test_clustering.py's discrimination
+# fixture (near-duplicate paraphrases vs. distinct problems phrased in the
+# same uniform "Analyst voice"), not picked first and validated after -- see
+# sul/analysis/clustering.py's module docstring for the actual numbers and
+# for a known limitation of TF-IDF cosine over Analyst-authored text.
+distance_threshold: 0.6
+metric: cosine
+linkage: average
+stop_words: english
+min_df: 1

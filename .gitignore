@@ -6,6 +6,9 @@
 *.sqlite
 *.sqlite3
 
+# Generated per-study reports (`sul report`, PROJECT_SPEC.md §M5)
+reports/
+
 # Python
 __pycache__/
 *.py[cod]
