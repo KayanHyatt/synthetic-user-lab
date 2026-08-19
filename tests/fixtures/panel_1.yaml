@@ -1,0 +1,11 @@
+# A single-persona panel for fast, targeted M4 tests that don't need a full
+# panel (ModelCall accounting, structured-output failure paths).
+seed: 42
+size: 1
+segments:
+  - name: solo_segment
+    weight: 1.0
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low

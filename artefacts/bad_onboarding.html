@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  Fixture artefact for M4's acceptance criterion (PROJECT_SPEC.md §M4) and
+  for M6's discriminative-validity and known-answer-calibration checks
+  (PROJECT_SPEC.md §M6.2, §M6.5). M4 only needs this file to exist and be a
+  plausibly bad onboarding flow; the seeded defects below are deliberate so
+  M6 has something concrete to detect and report a rate against, without
+  needing to retrofit this file later. M6 owns formally annotating/counting
+  them -- this comment names them for that milestone, it is not itself the
+  annotation.
+
+  Seeded ground-truth defects (at least three, per §M6.5):
+    1. The "Work email" field is required but carries no visible label or
+       placeholder text explaining that -- a screen reader or a skimming
+       user has no way to know it's mandatory before submitting.
+    2. The "See full plan details" link is a dead anchor (href="#") that
+       goes nowhere.
+    3. The headline price ("$9/mo") contradicts the pricing table lower on
+       the page ($15/mo for the same "Starter" plan).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Nimbus Notes — Sign up</title>
+  </head>
+  <body>
+    <header>
+      <h1>Nimbus Notes</h1>
+      <p>Start free. Starter plan from just <strong>$9/mo</strong>.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Create your account</h2>
+        <form>
+          <div>
+            <label for="full-name">Full name</label>
+            <input id="full-name" name="full_name" type="text" required />
+          </div>
+          <div>
+            <!-- Defect 1: required field, no label, no placeholder hint. -->
+            <input name="work_email" type="email" required />
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+          <button type="submit">Start free trial</button>
+        </form>
+        <p><a href="#">See full plan details</a></p>
+        <!-- Defect 2: the link above is a dead anchor, it goes nowhere. -->
+      </section>
+
+      <section>
+        <h2>Pricing</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Price</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Starter</td>
+              <!-- Defect 3: contradicts the headline "$9/mo" above. -->
+              <td>$15/mo</td>
+              <td>Billed annually. A one-time $25 setup fee applies.</td>
+            </tr>
+            <tr>
+              <td>Team</td>
+              <td>$49/mo</td>
+              <td>Per workspace, up to 10 seats.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

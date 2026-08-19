@@ -21,6 +21,7 @@ class ModelCallCreate(ORMModel):
     latency_ms: int
     seed: int | None = None
     cached: bool = False
+    template_version: str | None = None
 
     def to_orm(self) -> models.ModelCall:
         return models.ModelCall(
@@ -35,6 +36,7 @@ class ModelCallCreate(ORMModel):
             latency_ms=self.latency_ms,
             seed=self.seed,
             cached=self.cached,
+            template_version=self.template_version,
         )
 
 
@@ -51,4 +53,5 @@ class ModelCallRead(ORMModel):
     latency_ms: int
     seed: int | None
     cached: bool
+    template_version: str | None
     created_at: datetime

@@ -76,6 +76,7 @@ class ModelClient:
         agent: AgentRole,
         budget: BudgetGuard | None = None,
         run_id: int | None = None,
+        db_lock: asyncio.Lock | None = None,
     ) -> None:
         self._provider = provider
         self._provider_name = provider_name
@@ -83,6 +84,15 @@ class ModelClient:
         self._agent = agent
         self._budget = budget
         self._run_id = run_id
+        # M4: SQLite's `StaticPool` (used by every test and by the demo db)
+        # hands out one underlying DBAPI connection for the whole engine, so
+        # concurrent `ModelClient`s dispatched under the orchestrator's
+        # concurrency cap must not touch it from two threads at once via
+        # `asyncio.to_thread` simultaneously. `run_study` builds one lock per
+        # study run and hands it to every `ModelClient` it constructs; a
+        # client used outside the orchestrator (every M2-era test) passes
+        # none and behaves exactly as before.
+        self._db_lock = db_lock
 
     @overload
     async def complete(
@@ -94,6 +104,7 @@ class ModelClient:
         max_tokens: int,
         seed: int | None,
         response_schema: None = None,
+        template_version: str | None = None,
     ) -> str: ...
 
     @overload
@@ -106,6 +117,7 @@ class ModelClient:
         max_tokens: int,
         seed: int | None,
         response_schema: type[T],
+        template_version: str | None = None,
     ) -> T: ...
 
     async def complete(
@@ -117,6 +129,7 @@ class ModelClient:
         max_tokens: int,
         seed: int | None,
         response_schema: type[T] | None = None,
+        template_version: str | None = None,
     ) -> T | str:
         completion = await self._dispatch(
             messages=messages,
@@ -125,6 +138,7 @@ class ModelClient:
             max_tokens=max_tokens,
             seed=seed,
             response_schema=response_schema,
+            template_version=template_version,
         )
 
         if response_schema is None:
@@ -150,6 +164,7 @@ class ModelClient:
                 max_tokens=max_tokens,
                 seed=seed,
                 response_schema=response_schema,
+                template_version=template_version,
             )
             try:
                 return response_schema.model_validate_json(repaired.text)
@@ -167,6 +182,7 @@ class ModelClient:
         max_tokens: int,
         seed: int | None,
         response_schema: type[BaseModel] | None,
+        template_version: str | None = None,
     ) -> Completion:
         price = price_for(self._provider_name, model)
         estimated_tokens_in = estimate_input_tokens(messages)
@@ -174,7 +190,15 @@ class ModelClient:
 
         if self._budget is not None:
             # Gate runs, and must raise, before the provider is ever touched.
-            await asyncio.to_thread(self._budget.check, estimate)
+            # Serialised through `_db_lock` (if given) alongside `_record`,
+            # below, for the same reason: SQLite `StaticPool` has exactly one
+            # underlying connection, and the budget check is itself a read
+            # against it.
+            if self._db_lock is None:
+                await asyncio.to_thread(self._budget.check, estimate)
+            else:
+                async with self._db_lock:
+                    await asyncio.to_thread(self._budget.check, estimate)
 
         prompt_hash = config_hash(
             {
@@ -206,16 +230,25 @@ class ModelClient:
             )
             tokens_out = completion.usage.tokens_out if completion else 0
             cost_usd = cost_for(price, tokens_in, tokens_out) if completion else 0.0
-            await asyncio.to_thread(
-                self._record,
-                model=model,
-                prompt_hash=prompt_hash,
-                tokens_in=tokens_in,
-                tokens_out=tokens_out,
-                cost_usd=cost_usd,
-                latency_ms=latency_ms,
-                seed=seed,
-            )
+
+            async def _do_record() -> None:
+                await asyncio.to_thread(
+                    self._record,
+                    model=model,
+                    prompt_hash=prompt_hash,
+                    tokens_in=tokens_in,
+                    tokens_out=tokens_out,
+                    cost_usd=cost_usd,
+                    latency_ms=latency_ms,
+                    seed=seed,
+                    template_version=template_version,
+                )
+
+            if self._db_lock is None:
+                await _do_record()
+            else:
+                async with self._db_lock:
+                    await _do_record()
 
     def _record(
         self,
@@ -227,6 +260,7 @@ class ModelClient:
         cost_usd: float,
         latency_ms: int,
         seed: int | None,
+        template_version: str | None = None,
     ) -> None:
         with session_scope(self._session_factory) as session:
             session.add(
@@ -242,6 +276,7 @@ class ModelClient:
                     latency_ms=latency_ms,
                     seed=seed,
                     cached=False,
+                    template_version=template_version,
                 )
             )
 

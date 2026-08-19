@@ -8,7 +8,7 @@ reverse.
 from __future__ import annotations
 
 from sul.schemas.finding import FindingCreate, FindingRead
-from sul.schemas.isolation import PersonaContext
+from sul.schemas.isolation import AnalystContext, PersonaContext
 from sul.schemas.panel import PanelCreate, PanelRead, PersonaCreate, PersonaRead
 from sul.schemas.run import RunCreate, RunRead, TurnCreate, TurnRead
 from sul.schemas.study import (
@@ -22,6 +22,7 @@ from sul.schemas.study import (
 from sul.schemas.telemetry import ModelCallCreate, ModelCallRead
 
 __all__ = [
+    "AnalystContext",
     "ArtefactCreate",
     "ArtefactRead",
     "FindingCreate",

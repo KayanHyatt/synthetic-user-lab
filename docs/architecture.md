@@ -35,6 +35,7 @@ erDiagram
         INTEGER latency_ms
         INTEGER seed
         BOOLEAN cached
+        VARCHAR template_version
         DATETIME created_at
     }
     PANELS {

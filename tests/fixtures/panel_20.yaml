@@ -1,0 +1,27 @@
+# A small, fast panel for M4's tests -- 20 personas across two segments,
+# matching the acceptance criterion's "20 personas x 1 scenario"
+# (PROJECT_SPEC.md §M4) without pulling in the full 40-persona example panel.
+seed: 42
+size: 20
+segments:
+  - name: time_poor_professional
+    weight: 0.5
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low
+      goals:
+        all: ["evaluate quickly", "avoid setup work"]
+      constraints:
+        all: ["will not read docs"]
+
+  - name: cost_sensitive_student
+    weight: 0.5
+    attributes:
+      tech_comfort:
+        choice: [medium, low]
+      patience: medium
+      goals:
+        all: ["find the cheapest plan"]
+      constraints:
+        all: ["on a tight budget"]

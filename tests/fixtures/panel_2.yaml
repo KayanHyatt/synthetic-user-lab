@@ -1,0 +1,11 @@
+# A two-persona panel for M4 tests that need to confirm one persona's
+# failure doesn't affect another's run.
+seed: 42
+size: 2
+segments:
+  - name: solo_segment
+    weight: 1.0
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low

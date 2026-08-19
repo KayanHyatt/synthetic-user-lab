@@ -9,6 +9,16 @@ Analyst produces `ModelCall` rows that have no corresponding `Turn` (the
 Analyst never writes a transcript turn — see `sul.enums.TurnRole` vs
 `sul.enums.AgentRole`). Without `run_id` here, `sul cost <study_id>` (M2's
 acceptance criterion) would silently miss Analyst spend.
+
+> **M4 implementation note.** `template_version` (nullable) was added beyond
+> M1's table. The §M4 carry-forward requires "whatever identifies the
+> template version is recorded with the call" — nothing on `ModelCall` could
+> carry that before this milestone actually rendered a prompt from a file.
+> Folding it into `prompt_hash` would record it unreadably (a hash cannot be
+> read back out); a dedicated column keeps it queryable per M1's own
+> precedent of documenting added columns inline. Nullable because M2-era
+> calls (still exercised by `tests/test_model_call_recording.py` et al.,
+> which predate templates) pass none.
 """
 
 from __future__ import annotations
@@ -50,6 +60,7 @@ class ModelCall(Base):
     latency_ms: Mapped[int] = mapped_column(sa.Integer)
     seed: Mapped[int | None] = mapped_column(sa.Integer, default=None)
     cached: Mapped[bool] = mapped_column(sa.Boolean, default=False)
+    template_version: Mapped[str | None] = mapped_column(sa.String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow)
 
     run: Mapped[Run | None] = relationship(back_populates="model_calls")
