@@ -8,10 +8,25 @@ itself, which masked a real bug: `validate()` didn't call `create_all` and
 failed against a genuinely fresh database (caught by running `make.ps1
 validate` for real, not by this suite).
 
+`sul validate`'s provider is no longer always `FakeProvider` (PROJECT_SPEC.md
+§M6 Deviation 5, amended): it picks up `tests/cassettes/`'s real, committed
+recording when present, falling back to `FakeProvider` only when that
+directory is empty. `test_sul_validate_falls_back_to_fakeprovider_when_no_
+cassettes_exist` below forces the empty-directory branch explicitly (via
+`SUL_CASSETTE_DIR`), so its offline-gated assertions hold regardless of
+whether `tests/cassettes/` happens to be populated at test-run time --
+the real, cassette-backed branch (default `tests/cassettes/`, unmodified) is
+exercised end-to-end, byte-for-byte against the committed report, by
+`tests/test_validity_cassette_report_determinism.py` instead; this file
+stays about `sul validate`'s own CLI-level contract.
+
 The second test is the structural enforcement Confirm 1 in the M6 design
-conversation asked for: `sul validate` must have no flag that could point it
-at anything but `FakeProvider` -- checked against the command's actual
-`--help` output, not asserted in a comment.
+conversation asked for: `sul validate` must have no flag that could select a
+provider directly -- checked against the command's actual `--help` output,
+not asserted in a comment. It is still true after the amendment: the choice
+between `FakeProvider` and a cassette-backed `AnthropicProvider` is made
+automatically, by `_select_validate_provider`, from cassette-directory
+contents alone, never from a command-line flag.
 """
 
 from __future__ import annotations
@@ -36,8 +51,22 @@ def fresh_db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return db_path
 
 
-def test_sul_validate_writes_both_files_end_to_end_offline(
-    fresh_db_path: Path, tmp_path: Path
+@pytest.fixture
+def empty_cassette_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Forces `_select_validate_provider`'s `FakeProvider` fallback branch,
+    independent of whether the real `tests/cassettes/` happens to be
+    populated -- a test asserting offline-gated behaviour must not depend on
+    that.
+    """
+    cassette_dir = tmp_path / "empty_cassettes"
+    cassette_dir.mkdir()
+    monkeypatch.setenv("SUL_CASSETTE_DIR", str(cassette_dir))
+    get_settings.cache_clear()
+    return cassette_dir
+
+
+def test_sul_validate_falls_back_to_fakeprovider_when_no_cassettes_exist(
+    fresh_db_path: Path, empty_cassette_dir: Path, tmp_path: Path
 ) -> None:
     out_dir = tmp_path / "docs"
     result = runner.invoke(app, ["validate", "--out-dir", str(out_dir)])
@@ -59,6 +88,24 @@ def test_sul_validate_writes_both_files_end_to_end_offline(
     assert "not counted toward the two measured weaknesses" in limitations_text
 
 
+def test_sul_validate_uses_committed_cassettes_when_present(
+    fresh_db_path: Path, tmp_path: Path
+) -> None:
+    """The real, default `tests/cassettes/` (46 committed cassettes,
+    PROJECT_SPEC.md §M6 Deviation 12/13) is left unmodified here -- this is
+    a quick CLI-level smoke check that the cassette-backed branch actually
+    fires by default; `tests/test_validity_cassette_report_determinism.py`
+    is the exhaustive, byte-for-byte version of this same claim.
+    """
+    out_dir = tmp_path / "docs"
+    result = runner.invoke(app, ["validate", "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 0, result.output
+    validity_text = (out_dir / "validity_report.md").read_text(encoding="utf-8")
+    assert "NOT MEASURED OFFLINE" not in validity_text
+    assert "anthropic/claude-sonnet-5" in validity_text
+
+
 def test_sul_validate_has_no_flag_to_select_a_different_provider(
     fresh_db_path: Path,
 ) -> None:
@@ -66,6 +113,8 @@ def test_sul_validate_has_no_flag_to_select_a_different_provider(
     assert result.exit_code == 0, result.output
     for forbidden in ("--provider", "--cassette", "--record", "--model"):
         assert forbidden not in result.output, (
-            f"sul validate must never expose {forbidden!r} -- it always "
-            "runs FakeProvider (PROJECT_SPEC.md §M6: offline end to end)"
+            f"sul validate must never expose {forbidden!r} -- the choice "
+            "between FakeProvider and a cassette-backed AnthropicProvider "
+            "is automatic, from cassette-directory contents alone "
+            "(PROJECT_SPEC.md §M6 Deviation 5, amended), never user-selected"
         )

@@ -734,22 +734,69 @@ states at least two concrete, measured weaknesses.
 > provider, permanently, not just today.
 >
 > **Deviation 5: cassette-backed replay is supported as a first-class
-> parameter, but `sul validate` never constructs one.** Every §M6.2–§M6.5
-> function takes its `LLMProvider` as a parameter — `FakeProvider` and a
-> cassette-backed `AnthropicProvider` are just two callers of the same code.
+> parameter, and `sul validate` now constructs one automatically whenever
+> committed cassettes exist to replay.** Every §M6.2–§M6.5 function takes
+> its `LLMProvider` as a parameter — `FakeProvider` and a cassette-backed
+> `AnthropicProvider` are just two callers of the same code.
 > `tests/test_validity_cassette_plumbing.py` proves the full path (
 > `ModelClient` → `AnthropicProvider` → `CassetteTransport` replay → parsed
 > Pydantic reply) works, against a cassette hand-authored via
 > `httpx.MockTransport` (the same no-network recording technique
 > `tests/test_cassettes.py` already uses for the cassette layer itself) —
-> never a live call. `sul validate` itself hardcodes `FakeProvider` with no
-> flag that could point it elsewhere; `tests/test_cli_validate.py` checks
-> this structurally, against the command's actual `--help` output, not by
-> convention. Recording a *real* cassette (spending real money, the first
-> live call in this repo's history) is a separate, explicitly-authorised
-> action outside this milestone's scope, gated behind a decision the person
-> running this project makes with a cost estimate in hand — not something
-> `sul validate` or this commit does.
+> never a live call.
+>
+> **Originally, `sul validate` hardcoded `FakeProvider` unconditionally.**
+> At the time this milestone shipped, `tests/cassettes/` held nothing —
+> recording a *real* cassette (spending real money, the first live call in
+> this repo's history) was a separate, explicitly-authorised action outside
+> this milestone's own scope, gated behind a decision the person running
+> this project made with a cost estimate in hand, and there was nothing yet
+> for `sul validate` to replay even if it had tried. Hardcoding
+> `FakeProvider` was the correct call under that constraint: a flag that
+> *could* point at a real provider but had nothing to replay would either
+> hard-fail confusingly or (worse) silently fall through to a live call,
+> and neither was acceptable in a milestone whose own acceptance line reads
+> "validity report generated end-to-end offline."
+>
+> **That constraint is gone.** 46 real cassettes are now committed in
+> `tests/cassettes/` (PROJECT_SPEC.md §M6 Deviation 12/13, Config A —
+> Persona/Moderator/probes on `claude-haiku-4-5`, Analyst on
+> `claude-sonnet-5`), and with them, hardcoding `FakeProvider` stopped being
+> a safety measure and became a correctness bug: `docs/limitations.md`
+> could describe real, measured numbers that `tests/cassettes/` genuinely
+> backed, while `docs/validity_report.md` — the file `sul validate` itself
+> writes, the one a reader actually opens — kept reporting `NOT MEASURED
+> OFFLINE` for the same four checks, because the command generating it
+> never looked at what was sitting beside it in the repo. `make validate`
+> could no longer regenerate what the repo claimed to have measured; the
+> constraint this deviation originally existed to protect had inverted into
+> the thing breaking §M6's own acceptance criterion.
+>
+> `sul.cli._select_validate_provider` now makes the choice
+> `run_validity_harness`'s own two-member allow-list already permits (§M6
+> Deviation 7, unchanged): a cassette-backed, replay-only (`record=False`)
+> `AnthropicProvider` when `settings.cassette_dir` holds at least one
+> `*.json` file, else `FakeProvider` — still fully automatic, still no flag
+> on the command (`tests/test_cli_validate.py` still checks this
+> structurally against `--help`, now alongside a test that the *no-cassette*
+> fallback path still gates correctly, forced via `SUL_CASSETTE_DIR`
+> pointed at an empty directory, independent of whatever `tests/cassettes/`
+> happens to hold at test-run time). The cassette-backed branch dispatches
+> on the exact model configuration `tests/cassettes/` was recorded with
+> (`_CASSETTE_CONFIG_MODEL`/`_CASSETTE_CONFIG_ANALYST_MODEL` in
+> `sul/cli.py`) — any drift from that raises `CassetteMissError`, a hard,
+> visible failure, never a silent live dispatch; "offline" has always meant
+> "no live API call," not "always `FakeProvider`," and that distinction is
+> what makes this deviation's change safe rather than a reopening of the
+> constraint it describes. `docs/validity_report.md` is regenerated and
+> committed under this behaviour now (`tests/test_validity_cassette_report
+> _determinism.py` proves it reproduces byte-for-byte from the committed
+> cassettes, cross-process, the same pattern `tests/test_report
+> _determinism.py` established for `sul.report`); `docs/limitations.md`'s
+> template gained a matching data-driven section (gated on
+> `report.provider_name != "fake"`, not a static assumption that the report
+> is always `FakeProvider`-backed) carrying the same model-tier caveat a
+> prior version of this note put in a since-deleted separate file.
 >
 > **Deviation 7: `tests.support.scripted_provider.ScriptedProvider` is a
 > second offline provider, alongside M2's `FakeProvider`, and it is
@@ -1217,9 +1264,27 @@ states at least two concrete, measured weaknesses.
 > read past as expected/neutral. Position bias: shift 0.0 — no measurable
 > position effect on this panel. None of these numbers are estimated or
 > extrapolated for the CV-bullet placeholders in §7 below; §7 still says
-> `[X]` deliberately; filling those in from `docs
-> /validity_report_recorded.md` is a documentation task for whoever writes
-> the README (§M8), not something to backfill here.
+> `[X]` deliberately; filling those in is a documentation task for whoever
+> writes the README (§M8), not something to backfill here.
+>
+> **Amended the same session: `docs/validity_report_recorded.md` and
+> `tests/support/run_recorded_validity_report_script.py` (both described
+> immediately above) were deleted, superseded by the amended Deviation 5.**
+> Committing a *second*, differently-named report file whose real numbers
+> duplicated what `docs/validity_report.md` — the file `sul validate`
+> itself writes — should have been carrying directly was the wrong shape
+> for this fix: it left the file a reader actually opens still reporting
+> `NOT MEASURED OFFLINE` for four checks a file beside it said were
+> measured. Deviation 5 (amended, above) makes `sul validate` pick up
+> `tests/cassettes/` automatically instead, so `docs/validity_report.md`
+> carries the real numbers directly and there is only ever one committed
+> validity report. `tests/support/run_sul_validate_script.py` replaced the
+> deleted script — it drives the real `sul validate` command (via
+> `CliRunner`, not a hand-rolled reimplementation of provider selection) —
+> and `tests/test_validity_cassette_report_determinism.py` now asserts
+> cross-process byte-stability against `docs/validity_report.md` itself.
+> The real numbers reported two paragraphs up are unchanged by this
+> amendment; only which committed file carries them changed.
 >
 > `_run_one_persona`'s per-`ProviderError` containment gap (Deviation 11's
 > and Deviation 12's own "not done" note) is **not** fixed by this

@@ -18,10 +18,10 @@ mixed run can back different checks with different providers or models.
 | Check | Result | Provenance |
 |---|---|---|
 | 1. Reproducibility | variance 0.0, Jaccard 1.0 | `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1 |
-| 2. Discriminative validity | NOT MEASURED OFFLINE | `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1 |
-| 3. Acquiescence bias | NOT MEASURED OFFLINE | `validity_probe`: fake/fake-1 |
-| 4. Position bias | NOT MEASURED OFFLINE | `validity_probe`: fake/fake-1 |
-| 5. Known-answer calibration | NOT MEASURED OFFLINE | `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1 |
+| 2. Discriminative validity | material difference: True | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
+| 3. Acquiescence bias | gap: 1.0 (5/5 subjects) | `validity_probe`: anthropic/claude-haiku-4-5 |
+| 4. Position bias | shift: 0.0 (5/5 subjects) | `validity_probe`: anthropic/claude-haiku-4-5 |
+| 5. Known-answer calibration | 1/3 | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
 
 ## 1. Reproducibility
 
@@ -41,21 +41,30 @@ mixed run can back different checks with different providers or models.
 
 ## 2. Discriminative validity
 
-- **Provenance:** `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1
+- **Provenance:** `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5
 
-**NOT MEASURED OFFLINE** -- FakeProvider synthesizes structured output (category, summary, agreement, choice) as a uniform-random function of the full prompt hash -- blind to artefact content, question framing, and option position. This check requires a real provider (a cassette-backed one is sufficient and stays offline); measuring it against FakeProvider would report sampling noise as if it were a result.
+- Bad artefact blocker/confusion count: 6
+- Good artefact blocker/confusion count: 0
+- Material difference: True
 
 ## 3. Acquiescence bias
 
-- **Provenance:** `validity_probe`: fake/fake-1
+- **Provenance:** `validity_probe`: anthropic/claude-haiku-4-5
 
-**NOT MEASURED OFFLINE** -- FakeProvider synthesizes structured output (category, summary, agreement, choice) as a uniform-random function of the full prompt hash -- blind to artefact content, question framing, and option position. This check requires a real provider (a cassette-backed one is sufficient and stays offline); measuring it against FakeProvider would report sampling noise as if it were a result.
+- Positively framed question: Was the pricing clear?
+- Negatively framed question: Was anything unclear about the pricing?
+- Positive-framing agree rate: 0.0
+- Negative-framing agree rate: 1.0
+- Agreement gap: 1.0 (5/5 subjects)
 
 ## 4. Position bias
 
-- **Provenance:** `validity_probe`: fake/fake-1
+- **Provenance:** `validity_probe`: anthropic/claude-haiku-4-5
 
-**NOT MEASURED OFFLINE** -- FakeProvider synthesizes structured output (category, summary, agreement, choice) as a uniform-random function of the full prompt hash -- blind to artefact content, question framing, and option position. This check requires a real provider (a cassette-backed one is sufficient and stays offline); measuring it against FakeProvider would report sampling noise as if it were a result.
+- Options: ('Starter plan: $15/mo billed annually, 1 seat', 'Team plan: $49/mo per workspace, up to 10 seats')
+- First-position share (original order): 1.0
+- First-position share (reversed order): 1.0
+- Preference shift: 0.0 (5/5 subjects)
 
 ## 5. Known-answer calibration
 
@@ -63,11 +72,16 @@ Named "calibration" by PROJECT_SPEC.md §M6's own section header; the
 criterion it specifies is recall against a fixed known-answer set ("Report
 detection rate"), not confidence calibration.
 
-- **Provenance:** `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1 (same underlying runs as §2 -- §M6.5 reads the bad-artefact rows §M6.2 already produced)
+- **Provenance:** `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 (same underlying runs as §2 -- §M6.5 reads the bad-artefact rows §M6.2 already produced)
 
-**NOT MEASURED OFFLINE** -- FakeProvider synthesizes structured output (category, summary, agreement, choice) as a uniform-random function of the full prompt hash -- blind to artefact content, question framing, and option position. This check requires a real provider (a cassette-backed one is sufficient and stays offline); measuring it against FakeProvider would report sampling noise as if it were a result.
+- Detected: 1 / 3
+- Detection rate: 0.3333333333333333
 
-Total seeded defects: 3
+| Defect | Description | Detected |
+|---|---|---|
+| `missing-email-label` | The required 'Work email' field has no visible label or placeholder text. | True |
+| `dead-plan-details-link` | The 'See full plan details' link is a dead anchor (href="#"). | False |
+| `price-contradiction` | The headline price ($9/mo) contradicts the pricing table ($15/mo). | False |
 
 ## Offline-measurable weaknesses
 

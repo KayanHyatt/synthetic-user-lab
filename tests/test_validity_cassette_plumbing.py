@@ -6,9 +6,12 @@ path. The cassette here is hand-authored -- recorded against
 against a live API. This is what makes "replaying a cassette is offline"
 (Confirm 1) a tested claim.
 
-This cassette exists only to prove the plumbing works. It must never be
-reachable from `sul validate` -- see `tests/test_cli_validate.py`'s
-structural check that command has no flag that could point it here.
+This cassette exists only to prove the plumbing works, written to an
+isolated `tmp_path` -- it is never reachable from `sul validate`, which
+only ever reads `settings.cassette_dir` (PROJECT_SPEC.md §M6 Deviation 5,
+amended: that command does now pick up whatever real cassettes are
+committed in `tests/cassettes/`, automatically, but this hand-authored one
+is never placed there).
 """
 
 from __future__ import annotations

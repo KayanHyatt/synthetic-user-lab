@@ -13,13 +13,18 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import httpx
 import typer
 from sqlalchemy import func, select
 
 from sul.analysis.config import ClusteringConfig, load_clustering_config
-from sul.config import get_settings
+from sul.config import Settings, get_settings
 from sul.db import create_all, make_engine, make_session_factory
+from sul.enums import AgentRole
 from sul.models import ModelCall, Run, Study
+from sul.providers.anthropic import AnthropicProvider
+from sul.providers.base import LLMProvider
+from sul.providers.cassette import CassetteTransport
 from sul.providers.fake import FakeProvider
 from sul.report.build import StudyNotFoundError, build_report
 from sul.report.html import render_html
@@ -29,6 +34,48 @@ from sul.validity.limitations import render_limitations_markdown
 from sul.validity.markdown import render_validity_markdown
 
 app = typer.Typer(help="Synthetic User Lab CLI.")
+
+# The exact model configuration recorded into tests/cassettes/ by
+# scripts/record_validity_cassettes.py's "Config A" (PROJECT_SPEC.md §M6
+# Deviation 12/13): Persona/Moderator/probes on Haiku, Analyst on Sonnet.
+# `_select_validate_provider` below must dispatch on this exact
+# configuration whenever cassettes are present -- any drift produces a
+# `CassetteMissError`, a hard, visible failure, never a silent live
+# dispatch (§M6's own "no test/command ever hits a real API" discipline
+# extends to `sul validate`: replay-only, `record=False`, always).
+_CASSETTE_CONFIG_MODEL = "claude-haiku-4-5"
+_CASSETTE_CONFIG_ANALYST_MODEL = "claude-sonnet-5"
+
+
+def _select_validate_provider(
+    settings: Settings,
+) -> tuple[LLMProvider, str, str, dict[AgentRole, str] | None]:
+    """Choose `sul validate`'s provider (PROJECT_SPEC.md §M6 Deviation 5,
+    amended): a cassette-backed, replay-only `AnthropicProvider` when
+    `settings.cassette_dir` holds at least one recorded cassette, else
+    `FakeProvider`. Returns exactly one of the two-member allow-list
+    `run_validity_harness` itself enforces (§M6 Deviation 7) -- this
+    function is the only place that decides which, and it is not
+    user-selectable (no flag on this command chooses a provider; see
+    `tests/test_cli_validate.py`).
+    """
+    cassette_dir = settings.cassette_dir
+    if cassette_dir.exists() and any(cassette_dir.glob("*.json")):
+        transport = CassetteTransport(
+            httpx.AsyncHTTPTransport(), cassette_dir, record=False
+        )
+        # Never actually sent anywhere: record=False means replay-only, and
+        # a cassette miss raises CassetteMissError rather than dispatching.
+        provider: LLMProvider = AnthropicProvider(
+            "sul-validate-replay-only-sentinel-key", transport=transport
+        )
+        return (
+            provider,
+            "anthropic",
+            _CASSETTE_CONFIG_MODEL,
+            {AgentRole.ANALYST: _CASSETTE_CONFIG_ANALYST_MODEL},
+        )
+    return FakeProvider(), "fake", "fake-1", None
 
 
 @app.callback()
@@ -149,12 +196,16 @@ def validate(
     """Run the M6 validity harness end-to-end offline and write
     docs/validity_report.md + docs/limitations.md.
 
-    Always runs against `FakeProvider` -- there is no flag on this command
-    that constructs anything else (PROJECT_SPEC.md §M6 acceptance: "validity
-    report generated end-to-end offline"). A cassette-backed validity run
-    against a real provider's recorded traffic is a separate, explicitly
-    invoked path; it is never this command
-    (`tests/test_validity_cassette_plumbing.py` exercises that path directly).
+    Runs against a cassette-backed, replay-only `AnthropicProvider` when
+    `tests/cassettes/` holds recorded traffic, falling back to `FakeProvider`
+    when it's empty (PROJECT_SPEC.md §M6 Deviation 5, amended) --
+    `_select_validate_provider` is the only place that decides which, and
+    there is no flag on this command that picks either one directly or
+    points it at anything outside `run_validity_harness`'s own two-member
+    allow-list (§M6 Deviation 7; `tests/test_cli_validate.py` checks this
+    structurally, against the command's actual `--help` output). Replay is
+    the only mode either path ever uses -- "offline" always means "no live
+    API call," not "always FakeProvider."
     """
     settings = get_settings()
     engine = make_engine(settings.database_url)
@@ -164,12 +215,14 @@ def validate(
     create_all(engine)
     session_factory = make_session_factory(engine)
 
+    provider, provider_name, model, model_by_agent = _select_validate_provider(settings)
     report = asyncio.run(
         run_validity_harness(
             session_factory,
-            provider=FakeProvider(),
-            provider_name="fake",
-            model="fake-1",
+            provider=provider,
+            provider_name=provider_name,
+            model=model,
+            model_by_agent=model_by_agent,
         )
     )
 
