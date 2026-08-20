@@ -55,6 +55,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from sul.enums import AgentRole
 from sul.providers.anthropic import AnthropicProvider
 from sul.providers.base import LLMProvider
 from sul.providers.fake import FakeProvider
@@ -114,8 +115,17 @@ async def run_validity_harness(
     provider: LLMProvider,
     provider_name: str,
     model: str,
+    model_by_agent: dict[AgentRole, str] | None = None,
     base_path: Path | None = None,
 ) -> ValidityReportModel:
+    """`model_by_agent`, passed straight through to §M6.2's discriminative
+    validity check (the only check with Persona/Moderator/Analyst turns --
+    §M6.3/§M6.4's probes and §M6.1's reproducibility each dispatch a single
+    `AgentRole`, so a per-agent override has nothing to differentiate there),
+    optionally overrides `model` per `AgentRole`. Omitted (the default),
+    every agent dispatches on `model`, unchanged from before this parameter
+    existed.
+    """
     if not isinstance(provider, _ALLOWED_PROVIDER_TYPES):
         raise UnsupportedValidityProviderError(provider)
 
@@ -139,6 +149,7 @@ async def run_validity_harness(
         provider=provider,
         provider_name=provider_name,
         model=model,
+        model_by_agent=model_by_agent,
         base_path=root,
     )
     discriminative_validity = (

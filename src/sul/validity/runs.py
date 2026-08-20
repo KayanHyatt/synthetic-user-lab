@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sul.analysis.clustering import FindingRow
 from sul.db import session_scope
-from sul.enums import ArtefactKind, RunStatus
+from sul.enums import AgentRole, ArtefactKind, RunStatus
 from sul.models import Artefact, Panel, Persona, Run
 from sul.models._util import utcnow
 from sul.providers.base import LLMProvider
@@ -57,6 +57,7 @@ async def run_artefact_study(
     provider: LLMProvider,
     provider_name: str,
     model: str,
+    model_by_agent: dict[AgentRole, str] | None = None,
     artefact_path: str,
     panel_path: str,
     base_path: Path,
@@ -69,6 +70,10 @@ async def run_artefact_study(
     `Artefact` row for that content if one already exists in this session),
     run it end to end via `provider`, and return its `Finding` rows and
     study id.
+
+    `model_by_agent`, passed straight through to `run_study`, optionally
+    overrides `model` per `AgentRole` -- omitted (the default), every agent
+    dispatches on `model`, unchanged from before this parameter existed.
     """
     with session_factory() as session:
         artefact_id = get_or_create_artefact(
@@ -98,6 +103,7 @@ async def run_artefact_study(
         provider=provider,
         provider_name=provider_name,
         model=model,
+        model_by_agent=model_by_agent,
     )
 
     with session_factory() as session:

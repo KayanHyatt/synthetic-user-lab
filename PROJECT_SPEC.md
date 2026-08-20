@@ -823,6 +823,42 @@ states at least two concrete, measured weaknesses.
 > modified until diffed). Regenerated and committed as part of this
 > milestone's own commit whenever `sul.validity`'s output changes.
 >
+> **Deviation 9: a real recording pass (post-milestone) found real Haiku's
+> structured output too unreliable to record a usable §M6.2 run.**
+> `scripts/record_validity_cassettes.py` ran the panel_validity.yaml 5-persona
+> panel against the real Anthropic API in two configurations (Persona/
+> Moderator/probes on Haiku throughout; Analyst on Sonnet in config A, Haiku
+> in config B) to record `tests/cassettes/` for the first time. §M6.2's
+> discriminative-validity study failed **10/10** Runs (5 personas × bad +
+> good artefact): real `claude-haiku-4-5` wraps its `PersonaReply` JSON in
+> ` ```json ` code fences and invents field names (`narration`, `dialogue`,
+> `persona_speech`, `narrative`, `message`) instead of the schema's
+> `utterance`/`state`. M2's one bounded repair turn (`_REPAIR_INSTRUCTION`:
+> "reply again with ONLY output that validates against the schema") did not
+> recover a single one of the 10 — the second attempt repeated the same
+> failure mode. Because the Analyst only dispatches after a persona turn
+> parses successfully, **zero real Analyst calls were ever made in either
+> configuration** — the comparison this recording pass exists to set up
+> never got real data to compare. §M6.3's `FramingProbeReply` (a single
+> `agreement` field) failed the same way on the acquiescence probe — a real
+> reply added an unrequested `rationale` field and the repair turn didn't
+> strip it either — but with a second consequence: `run_acquiescence_probe`
+> has no per-subject error containment analogous to `_run_one_persona`'s
+> `except (BudgetExceeded, StructuredOutputError)` (§M4's per-run boundary,
+> this file's own M4 section), so the second failure propagated an uncaught
+> `StructuredOutputError` and crashed the harness run outright, rather than
+> marking one subject's probe failed and continuing. The 26 cassettes this
+> pass recorded (real spend: $0.0578, `claude-haiku-4-5` only — the Sonnet
+> Analyst was never reached) were deleted rather than committed: scrubbing
+> was verified clean against them (`tests/test_real_cassette_scrubbing.py`,
+> which now runs vacuously against the empty directory left behind), but
+> their *content* is a failed experiment, not a usable recording. Fixing
+> real-model structured-output reliability (stronger fence-stripping, a
+> harder repair prompt, or moving to Anthropic's native tool-use/schema
+> enforcement instead of prompted-JSON-plus-repair) is unstarted and
+> deliberately not decided here — this note records the failure mode for
+> whoever picks it up next, not a fix.
+>
 > **Dependencies.** None. Variance/Jaccard use stdlib `statistics`/set
 > arithmetic; `numpy` was already reachable (via `scikit-learn`, already
 > imported directly in `sul.analysis.clustering`).

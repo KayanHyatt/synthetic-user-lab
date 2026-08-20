@@ -18,7 +18,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session, sessionmaker
 
 from sul.analysis.clustering import FindingRow
-from sul.enums import FindingCategory
+from sul.enums import AgentRole, FindingCategory
 from sul.providers.base import LLMProvider
 from sul.validity.data import load_provenance
 from sul.validity.model import AgentProvenance
@@ -63,6 +63,7 @@ async def run_discriminative_validity(
     provider: LLMProvider,
     provider_name: str,
     model: str,
+    model_by_agent: dict[AgentRole, str] | None = None,
     bad_artefact_path: str = DEFAULT_BAD_ARTEFACT_PATH,
     good_artefact_path: str = DEFAULT_GOOD_ARTEFACT_PATH,
     panel_path: str = DEFAULT_PANEL_PATH,
@@ -75,6 +76,7 @@ async def run_discriminative_validity(
         provider=provider,
         provider_name=provider_name,
         model=model,
+        model_by_agent=model_by_agent,
         artefact_path=bad_artefact_path,
         panel_path=panel_path,
         base_path=root,
@@ -85,6 +87,7 @@ async def run_discriminative_validity(
         provider=provider,
         provider_name=provider_name,
         model=model,
+        model_by_agent=model_by_agent,
         artefact_path=good_artefact_path,
         panel_path=panel_path,
         base_path=root,

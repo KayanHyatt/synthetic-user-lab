@@ -127,6 +127,16 @@ class CassetteCore:
     `httpx2.Request`/`Response` — two distinct classes with an identical
     runtime surface. `response_cls` is whichever module's `Response` the
     calling transport must hand back.
+
+    `record_if_missing` (default `False`, so every existing call site is
+    unaffected) only matters when `record=True`: instead of unconditionally
+    re-dispatching and overwriting, a key that already has a cassette on
+    disk is replayed from it, and only a genuine miss reaches the network
+    and writes a new file. This is what lets a second recording pass share
+    a cassette directory with a first one — requests whose key is unchanged
+    (same model, same prompt, same everything the key is built from) cost
+    nothing the second time; only genuinely new keys (e.g. one agent's model
+    changed) are actually dispatched.
     """
 
     def __init__(
@@ -136,11 +146,13 @@ class CassetteCore:
         *,
         record: bool,
         response_cls: Callable[..., Any],
+        record_if_missing: bool = False,
     ) -> None:
         self._inner = inner
         self._cassette_dir = cassette_dir
         self._record = record
         self._response_cls = response_cls
+        self._record_if_missing = record_if_missing
 
     async def handle(self, request: Any) -> Any:
         body = await request.aread()
@@ -148,6 +160,8 @@ class CassetteCore:
         path = self._cassette_dir / f"{key}.json"
 
         if self._record:
+            if self._record_if_missing and path.exists():
+                return self._load(path, request)
             response = await self._inner.handle_async_request(request)
             await response.aread()
             self._write(path, request, response, body)
@@ -196,9 +210,14 @@ class CassetteTransport(httpx.AsyncBaseTransport):
         cassette_dir: Path,
         *,
         record: bool = False,
+        record_if_missing: bool = False,
     ) -> None:
         self._core = CassetteCore(
-            inner, cassette_dir, record=record, response_cls=httpx.Response
+            inner,
+            cassette_dir,
+            record=record,
+            response_cls=httpx.Response,
+            record_if_missing=record_if_missing,
         )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:

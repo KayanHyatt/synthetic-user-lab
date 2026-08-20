@@ -131,6 +131,104 @@ async def test_replay_matches_on_canonical_body_not_key_order(
 
 
 @pytest.mark.asyncio
+async def test_record_if_missing_replays_an_existing_cassette_without_the_network(
+    cassette_dir: Path,
+) -> None:
+    """A second recording pass sharing a cassette dir with a first one
+    (PROJECT_SPEC.md M6 two-configuration recording pass): a key already on
+    disk must not re-dispatch, even though `record=True`.
+    """
+    body = {"model": "claude-opus-5", "messages": [{"role": "user", "content": "hi"}]}
+    await _record_one_cassette(cassette_dir, body=body)
+
+    def _network_should_not_be_called(
+        request: httpx.Request,
+    ) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("a cached key must not be re-dispatched")
+
+    transport = CassetteTransport(
+        httpx.MockTransport(_network_should_not_be_called),
+        cassette_dir,
+        record=True,
+        record_if_missing=True,
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        response = await client.post(
+            REQUEST_URL,
+            headers={"x-api-key": "a-totally-different-live-key"},
+            json=body,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["content"][0]["text"] == "hello from the mock"
+
+
+@pytest.mark.asyncio
+async def test_record_if_missing_still_dispatches_and_writes_a_genuine_miss(
+    cassette_dir: Path,
+) -> None:
+    """A key with no existing cassette is dispatched and written normally,
+    `record_if_missing=True` notwithstanding -- it only short-circuits keys
+    already on disk.
+    """
+    body = {"model": "claude-opus-5", "messages": [{"role": "user", "content": "hi"}]}
+    transport = CassetteTransport(
+        httpx.MockTransport(_mock_handler),
+        cassette_dir,
+        record=True,
+        record_if_missing=True,
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        response = await client.post(
+            REQUEST_URL, headers={"x-api-key": SENTINEL_KEY}, json=body
+        )
+
+    assert response.status_code == 200
+    assert len(list(cassette_dir.glob("*.json"))) == 1
+
+
+@pytest.mark.asyncio
+async def test_record_without_record_if_missing_still_always_overwrites(
+    cassette_dir: Path,
+) -> None:
+    """Default behaviour (`record_if_missing=False`, the existing default)
+    is unchanged: `record=True` always re-dispatches and overwrites, even
+    when a cassette for that key already exists.
+    """
+    body = {"model": "claude-opus-5", "messages": [{"role": "user", "content": "hi"}]}
+    await _record_one_cassette(cassette_dir, body=body)
+
+    called = False
+
+    def _second_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_02",
+                "model": "claude-opus-5",
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": "second response"}],
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            },
+        )
+
+    transport = CassetteTransport(
+        httpx.MockTransport(_second_handler), cassette_dir, record=True
+    )
+    async with httpx.AsyncClient(transport=transport) as client:
+        response = await client.post(
+            REQUEST_URL,
+            headers={"x-api-key": SENTINEL_KEY},
+            json=body,
+        )
+
+    assert called
+    assert response.json()["content"][0]["text"] == "second response"
+
+
+@pytest.mark.asyncio
 async def test_replay_miss_raises_and_never_touches_the_network(
     cassette_dir: Path,
 ) -> None:

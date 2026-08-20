@@ -13,11 +13,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from sul import models
-from sul.enums import ArtefactKind, FindingCategory, RunStatus, TurnRole
+from sul.enums import AgentRole, ArtefactKind, FindingCategory, RunStatus, TurnRole
+from sul.providers.base import Completion, Message
 from sul.providers.fake import FakeProvider
+from sul.schemas.agents import PersonaReply
 from sul.validity.data import load_finding_rows
 from sul.validity.discriminative import (
     blocker_confusion_count,
@@ -25,6 +29,7 @@ from sul.validity.discriminative import (
     run_discriminative_validity,
 )
 from tests.support.report_factory import build_report_fixture
+from tests.support.scripted_provider import ScriptedProvider, text_completion
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -152,3 +157,63 @@ async def test_fakeprovider_runs_both_artefacts_end_to_end_offline(
     )
     assert result.bad_blocker_confusion_count >= 0
     assert result.good_blocker_confusion_count >= 0
+
+
+def _always_completed_script(
+    index: int,
+    messages: list[Message],
+    model: str,
+    seed: int | None,
+    response_schema: type[BaseModel] | None,
+) -> Completion:
+    if response_schema is PersonaReply:
+        return text_completion(
+            PersonaReply(utterance="ok", state="completed").model_dump_json(),
+            model=model,
+        )
+    if response_schema is not None and "findings" in response_schema.model_fields:
+        return text_completion(
+            response_schema(findings=[]).model_dump_json(), model=model
+        )
+    return text_completion("ok", model=model)
+
+
+@pytest.mark.asyncio
+async def test_model_by_agent_routes_the_analyst_independently_of_persona_moderator(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """`run_discriminative_validity`'s `model_by_agent` reaches `run_study`'s
+    three dispatch sites across *both* artefact studies (bad + good) --
+    Persona/Moderator fall back to `model` while the Analyst uses its
+    override, in each.
+    """
+    provider = ScriptedProvider(script=_always_completed_script)
+    result = await run_discriminative_validity(
+        session_factory,
+        provider=provider,
+        provider_name="fake",
+        model="fallback-model",
+        model_by_agent={AgentRole.ANALYST: "analyst-model"},
+        panel_path="tests/fixtures/panel_2.yaml",
+        base_path=REPO_ROOT,
+    )
+
+    with session_factory() as session:
+        rows = session.execute(
+            select(models.ModelCall.agent, models.ModelCall.model).where(
+                models.ModelCall.run_id.in_(
+                    select(models.Run.id).where(
+                        models.Run.study_id.in_(
+                            [result.bad_study_id, result.good_study_id]
+                        )
+                    )
+                )
+            )
+        ).all()
+
+    by_agent: dict[AgentRole, set[str]] = {}
+    for agent, model in rows:
+        by_agent.setdefault(agent, set()).add(model)
+
+    assert by_agent[AgentRole.PERSONA] == {"fallback-model"}
+    assert by_agent[AgentRole.ANALYST] == {"analyst-model"}
