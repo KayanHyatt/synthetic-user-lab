@@ -221,6 +221,20 @@ class LLMProvider(Protocol):
 > is implemented in `src/sul/cli.py` now, ahead of the rest of the Typer
 > CLI, which remains M7's scope.
 
+> **M2 cross-reference (added in a later session, landed as part of §M6's
+> Deviation 10).** `AnthropicProvider.complete` no longer merely accepts and
+> ignores `response_schema` — it turns it into a native `output_config
+> .format` JSON-schema constraint on the request. This reverses that
+> class's own docstring claim, unchanged since this milestone, that the
+> schema is "not enforced API-side... so every adapter behaves identically
+> regardless of whether the underlying API has a native structured-output
+> mode." A reader relying on that sentence should follow this pointer to
+> §M6's Deviation 10 rather than assume it still describes the code. The
+> repair-turn mechanism this section itself specifies is untouched — it
+> still fires exactly once, still on any provider, still without regex or a
+> fallback default; only the Anthropic adapter changed, and only in how it
+> builds the outgoing request.
+
 > **M2 environment note.** The first real (non-cassette) call to the
 > Anthropic API from this Windows machine, via `AnthropicProvider`, worked on
 > the first try with `SSL_CERT_FILE` set to a Windows root-store export
@@ -859,9 +873,280 @@ states at least two concrete, measured weaknesses.
 > deliberately not decided here — this note records the failure mode for
 > whoever picks it up next, not a fix.
 >
+> **Amended in a later session (see Deviation 10).** The paragraph above
+> reads as "real Haiku ignores the schema it was given." It doesn't — it was
+> never given one, in any form. `src/sul/agents/templates/persona_system.v1
+> .j2`, `moderator_followup.v1.j2`, and `analyst.v1.j2` (the three M4 turn-
+> loop templates) contain **zero** output-format instructions; they describe
+> the task in prose. `AnthropicProvider.complete` (pre-Deviation-10) bound
+> `response_schema` as a parameter and never referenced it again in the
+> function body — the adapter's own docstring said as much. So attempt 1 of
+> every real call in this recording pass had no reason to emit JSON at all,
+> and the one repair turn (`_REPAIR_INSTRUCTION`, quoted above) is the
+> *first* format instruction the model ever saw — and even that shows it
+> only pydantic's stringified `ValidationError`, never the JSON Schema
+> itself. A 10/10 failure under those conditions is the expected outcome of
+> the setup, not evidence that real Haiku's structured-output following is
+> unreliable in general. This amendment does not retract the second
+> consequence recorded above (`run_acquiescence_probe` had no per-subject
+> containment) — that finding was independently correct and is fixed by
+> Deviation 11 below. A reader landing on the original paragraph should not
+> conclude real Haiku's structured output needed a workaround before it was
+> ever actually asked for structured output.
+>
 > **Dependencies.** None. Variance/Jaccard use stdlib `statistics`/set
 > arithmetic; `numpy` was already reachable (via `scikit-learn`, already
 > imported directly in `sul.analysis.clustering`).
+>
+> **Deviation 10 (later session): `AnthropicProvider` now turns
+> `response_schema` into a native `output_config.format` JSON-schema
+> constraint, rather than accepting and ignoring it.** `sul.providers
+> .anthropic.AnthropicProvider.complete` passes
+> `output_config={"format": {"type": "json_schema", "schema":
+> transform_schema(response_schema)}}` when a schema is given —
+> `anthropic.transform_schema` (public SDK helper) relocates JSON Schema
+> keywords `output_config.format` rejects outright (`minLength`,
+> `minimum`/`maximum`, etc. — every `Field(ge=..., le=...)`/`Field
+> (min_length=...)` constraint this project's schemas already use) into
+> field descriptions rather than sending them raw, and pydantic still
+> enforces them client-side afterwards regardless. This is a change to one
+> file, not a Protocol change: `LLMProvider.complete` (§M2) already carries
+> `response_schema: type[BaseModel] | None`, `Completion` stays text-only,
+> and `sul.providers.client.ModelClient`'s one bounded repair turn is
+> untouched — it stays live for `max_tokens` truncation and for the
+> `sul.providers.openai`/`.gemini` adapters, which still ignore
+> `response_schema` exactly as this adapter used to. **Reverses this
+> class's own pre-existing docstring claim** ("not enforced API-side... so
+> every adapter behaves identically") — see the cross-reference added to
+> §M2's implementation note. Forced tool use (`tools` + `tool_choice` +
+> `strict: true`) was considered and declined: the payload would arrive as
+> a `tool_use` block's `.input` dict, requiring `Completion` to gain a
+> structured field and `ModelClient`'s two `model_validate_json` call sites
+> to branch on `model_validate` instead, plus `tools`/`tool_choice` threaded
+> through the Protocol, both `ModelClient.complete` overloads, `_dispatch`,
+> every adapter, and roughly fifteen test doubles — an M2-scale change
+> `output_config.format` buys the same guarantee without.
+>
+> A second, independent 400 risk this recording pass never reached (zero
+> real Analyst calls were ever made — see above): `AnthropicProvider` sent
+> `temperature` unconditionally, and sampling parameters
+> (`temperature`/`top_p`/`top_k`) are **removed** on Claude 4.6-and-later
+> model families — `claude-opus-5`, `claude-sonnet-5`, `claude-opus-4-7`,
+> `claude-opus-4-8`, `claude-fable-5`, `claude-mythos-5` among them. Config
+> A's Sonnet Analyst would have hit this the moment a persona turn parsed
+> successfully. `_accepts_temperature` (`sul.providers.anthropic`) omits
+> `temperature` from the request for those model-name prefixes;
+> `claude-haiku-4-5` is unaffected and still receives it, which is why
+> nothing else in this recording pass 400'd. `tests
+> /test_anthropic_structured_output.py` proves both changes offline, driven
+> entirely through `httpx.MockTransport` (the same no-network technique
+> `tests/test_cassettes.py` uses) — never a live call: `output_config`
+> present with `type: json_schema` and no unsupported keyword surviving
+> anywhere in the schema tree (checked recursively, since a nested `$defs`
+> entry is exactly where pydantic places a non-root `Field` constraint) for
+> every real schema in this codebase, `additionalProperties: false` on every
+> object node, the per-run `Literal[valid_evidence_ordinals]` analyst schema
+> arriving as a JSON Schema `enum`, `output_config` absent when no schema is
+> given, and `temperature` present for Haiku / absent for Sonnet and Opus.
+>
+> **Deviation 11 (later session): the probe path gained per-subject
+> containment, backoff, a per-section budget ceiling, and a third
+> `MeasurementStatus` — the fix for this note's second consequence.**
+> `sul.validity.acquiescence.run_acquiescence_probe` and `sul.validity
+> .position.run_position_bias_probe` now wrap each subject's calls in
+> `try/except (ProviderError, StructuredOutputError)`, scoped to the *whole*
+> subject rather than one call: each subject feeds two sinks (positive/
+> negative framing; original/reversed ordering), and `agreement_gap`/
+> `preference_shift` are only meaningful as a paired comparison across them,
+> so a subject that fails partway through is discarded from *both* sinks
+> atomically — accumulated into a local list first, only extended onto the
+> shared sinks once every call for that subject has succeeded. Each
+> individual probe call is additionally wrapped in `call_with_backoff`
+> (`sul.runner.retry`, already used by §M4's turn loop), and an optional
+> `max_cost_usd` constructs a `BudgetGuard` scoped to that check's own
+> materialised study — **per-check, not a shared whole-harness ceiling**:
+> `run_validity_harness` gained the same parameter, forwarded unchanged to
+> discriminative validity (which spends it twice, once per artefact study,
+> via `run_artefact_study`, which now also accepts and threads it into
+> `run_study`'s existing `budget` parameter), acquiescence, and position
+> bias independently.
+>
+> A second bug, found while building this: `sul.validity.runs
+> .materialize_probe_subjects` created every probe's `Run` row with
+> `status=COMPLETED` and both `started_at`/`finished_at` set **before any
+> probe call was dispatched** — every subject read `COMPLETED, error=None`
+> regardless of whether its probe ever ran, the opposite of what §M4's own
+> `_prepare_run` does for a turn-loop run. Probe `Run` rows now start
+> `PENDING` and are resolved by new `mark_probe_run_completed`/
+> `mark_probe_run_failed` helpers (mirroring, not importing,
+> `sul.runner.orchestrator`'s private equivalents — a probe run has no
+> `Turn`/`Finding` rows to reconcile).
+>
+> **`MeasurementStatus.PARTIALLY_MEASURED`** (`sul.validity.sentinel`) is a
+> third enum member, not a count field bolted onto `MEASURED` — same
+> reasoning `NOT_MEASURED_OFFLINE` was originally added for: a rate computed
+> only over survivors, rendered identically to a full-panel rate, hides that
+> the denominator shrank. `AcquiescenceSection`/`PositionBiasSection` gained
+> `subjects_attempted`/`subjects_measured`, rendered next to every rate in
+> `validity_report.md.j2` (`sul.validity.harness._probe_status` resolves the
+> three-way status from those two counts alone). **Zero survivors
+> (`subjects_measured == 0`) resolves to `PARTIALLY_MEASURED`, deliberately
+> not `NOT_MEASURED_OFFLINE`** — that member's rendered label and reason
+> text are specifically about `FakeProvider`'s content-blind synthesis and
+> would misdescribe a real-provider section that dispatched real calls and
+> simply lost every subject; every rate field is `None` in this case, never
+> the `0.0` `agreement_rate([])`/`first_option_share([], ...)` would
+> otherwise return, so a wiped-out section can never be mistaken for a
+> confidently-measured, unbiased panel.
+>
+> **Section-level containment was added to `run_validity_harness` itself**
+> for discriminative validity (+ the calibration measurement derived from
+> it), acquiescence, and position bias — each wrapped in
+> `except (ProviderError, StructuredOutputError)`, degrading to
+> `PARTIALLY_MEASURED` with the exception as its reason while every other
+> section, and every already-billed `ModelCall` behind it, survives into the
+> returned report (§M4's "exits cleanly with partial results saved"
+> contract, applied one level up). **Reproducibility (§M6.1) is deliberately
+> excluded**: `ReproducibilitySection` has no `status` field at all — "always
+> `measured`" is baked into its own docstring — so there is no value this
+> containment could assign it without a model change outside this
+> deviation's scope, and it is always dispatched against a freshly
+> constructed `FakeProvider()`, never the harness-level `provider`, so a
+> real provider's failure cannot reach it regardless.
+>
+> Not done, and out of scope for this deviation: `sul.runner.orchestrator
+> ._run_one_persona`'s own per-run containment still only catches
+> `(BudgetExceeded, StructuredOutputError)`, not `RateLimited`-exhausted /
+> `Refused` / `BadRequest` / `Overloaded` — an M4-level gap this session
+> found but did not fix, mitigated at the harness boundary above (which
+> catches the broader `ProviderError` family) but not at its source.
+>
+> Tested offline throughout: `tests/test_validity_probe_containment.py`
+> drives `run_acquiescence_probe`/`run_position_bias_probe` directly against
+> `ScriptedProvider` (content-aware, and for exactly that reason refused at
+> `run_validity_harness`'s own allow-list boundary — Deviation 7 — so it
+> cannot exercise the harness-level status resolution) with a scripted
+> failure on one subject, asserting the failed subject's `Run` row is
+> `FAILED` with a non-null `error`, the surviving subjects' rows are
+> `COMPLETED`, and both sinks land on the same rate as if the failed subject
+> had never existed. Harness-level status resolution, zero-survivor
+> gating, and section-level degradation are each proven separately by
+> monkeypatching one probe function at a time (mirroring `tests
+> /test_validity_harness.py
+> ::test_reproducibility_never_touches_the_harness_level_provider`'s own
+> pattern), since `ScriptedProvider` cannot reach `run_validity_harness`
+> and `FakeProvider` never raises `ProviderError`/`StructuredOutputError` in
+> the first place.
+>
+> No real cassettes were recorded or committed in this session, and no live
+> API call was made — this deviation is the offline groundwork the next
+> recording attempt needs; running `scripts/record_validity_cassettes.py`
+> again remains a separate, explicitly-authorised action outside this
+> session's scope.
+>
+> **Amended in a later session (see Deviation 12): the recording attempt
+> happened, and it worked for Config A.** 46 cassettes are committed in
+> `tests/cassettes/` — a complete, `MEASURED` Config A run. Config B never
+> completed; §M6.5's calibration is Config A's Sonnet-Analyst numbers only.
+> `tests/test_real_cassette_scrubbing.py` now runs for real against them
+> (no longer vacuous) and passes.
+>
+> **Deviation 12 (later session): Config A recorded successfully ($0.1126
+> real, 46 calls); Config B blocked by a cassette-replay bug, not a
+> connection problem — corrected diagnosis, not fixed tonight.**
+> `scripts/record_validity_cassettes.py` ran for real. Config A (Persona/
+> Moderator/probes on `claude-haiku-4-5`, Analyst on `claude-sonnet-5`)
+> completed in full — all four gated §M6.2–.5 checks came back `MEASURED`,
+> 46 real calls recorded (ground truth summed from each cassette's own
+> `usage` field: 36 Haiku, $0.0606; 10 Sonnet, $0.0519; total $0.1126). A
+> real Sonnet Analyst cassette was inspected by hand: clean
+> `{"findings":[...]}`, no fences, exactly the schema — Deviation 10 holds
+> on the real Analyst path, not just the earlier single-call smoke test.
+> All 46 cassettes were verified complete and parseable (valid JSON, 200
+> status, non-empty text content, `stop_reason` never `max_tokens`) before
+> anything was committed; none needed deletion.
+>
+> Config B (Analyst also on Haiku) never completed. The first live attempt
+> got partway through Config B before failing; two subsequent verification
+> re-runs (against a fresh, unconfounded database — the recording script's
+> default `--db-path` is a fixed temp-dir filename that had stale rows from
+> an earlier session, which is what made the first cost readout wrong and
+> had to be redone) failed **immediately, on Config A too**, every dispatch,
+> reported as `anthropic.APIConnectionError` ("Connection error."), $0
+> billed each time.
+>
+> **First diagnosis offered for this (orphaned `asyncio` tasks racing a
+> concurrent-request limit) was wrong, and was corrected before anything was
+> committed.** The actual mechanism, confirmed fully offline with zero
+> further live spend
+> (`tests/test_real_cassette_scrubbing.py`-adjacent manual diagnostic, not
+> committed — a hand-built `httpx.Request` reconstructed from each cassette's
+> own recorded fields, replayed through `CassetteTransport(record_if_missing
+> =True)` with a poison-pill inner transport that raises if ever touched):
+> **every one of the 46 cassettes fails identically on replay** with
+> `zlib.error: Error -3 while decompressing data: incorrect header check` —
+> not a connection error at all. Real Anthropic responses arrive
+> gzip-compressed (`content-encoding: gzip` in the recorded response
+> headers — `tests/cassettes/*.json` shows this directly). `CassetteCore
+> ._write` (`sul/providers/cassette.py`) stores `response.text` — httpx's
+> already-decompressed body — as the cassette's `body`, but stores the
+> *original* response headers, `content-encoding: gzip` included, unchanged.
+> `_load` reconstructs an `httpx.Response` from that stale header over the
+> now-plaintext body; something downstream (httpx's own decoder, or the
+> `anthropic` SDK's response handling) sees `gzip` and tries to
+> decompress content that no longer is, and the SDK maps that decode-layer
+> failure to `APIConnectionError` — which is why every failure was reported
+> as a "connection" problem with `$0` cost (nothing was ever dispatched to
+> the network on a replay branch; the failure is purely local, before any
+> request leaves).
+>
+> This bug is not new — `record_if_missing` shipped in this file's own §M6
+> Deviation 5, tested only against `httpx.MockTransport`-fabricated
+> responses (`tests/test_validity_cassette_plumbing.py`,
+> `tests/test_cassettes.py`), which never set `content-encoding` in the
+> first place. **Tonight was the first time `record=True` ever ran against
+> the real API**, so this had never been exercised until now. Confirmed
+> definitively: `match_key()` recomputed from each cassette's own recorded
+> request fields matches its filename for all 46 (not a key-mismatch/cache-
+> miss problem either) — the replay branch is reached correctly and fails
+> inside it, every time, for every cassette.
+>
+> **Left open, not fixed tonight, on explicit instruction:**
+> - `CassetteCore._write`/`_load` (`sul/providers/cassette.py`) need to
+>   reconcile the stored (decompressed) body with the stored (still-
+>   compressed-claiming) headers — most likely by stripping
+>   `content-encoding` (and probably `transfer-encoding`, `content-length`,
+>   which are equally stale against a re-encoded plaintext body) at write
+>   time, since the cassette always stores plaintext regardless of what the
+>   wire used. Whoever picks this up should re-run the offline diagnostic
+>   above against a fix before attempting Config B again — no live call is
+>   needed to verify it, only the 46 cassettes already on disk.
+> - `sul.runner.orchestrator._run_one_persona`'s per-run containment still
+>   only catches `(BudgetExceeded, StructuredOutputError)`, not
+>   `ProviderError` generally (carried over from Deviation 11's own "not
+>   done" note above) — real either way, independent of the cassette bug,
+>   and also not fixed tonight.
+> - `run_validity_harness`'s `max_cost_usd` was unbounded in this recording
+>   pass; that was an oversight, not the intent. `scripts
+>   /record_validity_cassettes.py` now takes `--max-cost-usd` (default
+>   `$1.00` per check — discriminative validity spends it twice, once per
+>   artefact study; acquiescence and position bias each get their own; see
+>   the flag's own `--help` text) rather than leaving it unset.
+> - `docs/limitations.md`'s template gained a standing, unconditional
+>   section (survives every `sul validate` regeneration, since it is not
+>   derived from the `FakeProvider`-only `ValidityReportModel` `sul
+>   validate` always builds) pointing at `tests/cassettes/` and stating
+>   plainly that Config A's real numbers are Sonnet-Analyst-specific and do
+>   not transfer to a cheaper or different model combination — Config B
+>   remains open, and §M6's acceptance does not require it.
+>
+> Config B is **not required for M6's own acceptance criteria** (§M6:
+> "validity report generated end-to-end offline"; the real-provider
+> recording pass has always been the explicitly-separate, explicitly-
+> authorised path this note and Deviation 5 describe). Committing Config A's
+> 46 cassettes as-is, with Config B left open, is a deliberate choice made
+> with the person running this project, not a shortfall against this
+> section's acceptance line.
 
 ---
 

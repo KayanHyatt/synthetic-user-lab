@@ -99,7 +99,36 @@ def _cassette_file_count(cassette_dir: Path) -> int:
     return len(list(cassette_dir.glob("*.json")))
 
 
-async def main(db_path: Path) -> None:
+def _report_section_statuses(report: object, label: str) -> None:
+    """Print each content-dependent section's `MeasurementStatus` --
+    specifically so `PARTIALLY_MEASURED` (PROJECT_SPEC.md §M6 Deviation 11)
+    is visible before anyone decides whether to commit these cassettes, not
+    just the notional-cost/cassette-count numbers `_report_notional_cost`
+    already prints.
+    """
+    from sul.validity.model import ValidityReportModel
+
+    assert isinstance(report, ValidityReportModel)
+    print(f"\n=== {label}: section statuses ===")
+    for name, section in (
+        ("discriminative_validity", report.discriminative_validity),
+        ("acquiescence_bias", report.acquiescence_bias),
+        ("position_bias", report.position_bias),
+        ("known_answer_calibration", report.known_answer_calibration),
+    ):
+        subjects = ""
+        if section.status != section.status.MEASURED and hasattr(
+            section, "subjects_attempted"
+        ):
+            attempted = getattr(section, "subjects_attempted", None)
+            measured = getattr(section, "subjects_measured", None)
+            if attempted is not None and measured is not None:
+                subjects = f" ({measured}/{attempted} subjects)"
+        reason = f" -- {section.reason}" if section.reason else ""
+        print(f"  {name}: {section.status.value}{subjects}{reason}")
+
+
+async def main(db_path: Path, max_cost_usd: float) -> None:
     settings = get_settings()
     if not settings.anthropic_api_key:
         raise SystemExit("ANTHROPIC_API_KEY not resolved via Settings")
@@ -109,29 +138,35 @@ async def main(db_path: Path) -> None:
     create_all(engine)
     session_factory = make_session_factory(engine)
 
+    print(f"max_cost_usd per check: ${max_cost_usd:.2f} (see --help)")
+
     before_a = _cassette_file_count(cassette_dir)
     print("=== Config A: Sonnet Analyst, Haiku persona/moderator/probes ===")
-    await run_validity_harness(
+    report_a = await run_validity_harness(
         session_factory,
         provider=_make_provider(settings.anthropic_api_key, cassette_dir),
         provider_name="anthropic",
         model=HAIKU,
         model_by_agent={AgentRole.ANALYST: SONNET},
         base_path=REPO_ROOT,
+        max_cost_usd=max_cost_usd,
     )
     after_a = _cassette_file_count(cassette_dir)
     _report_notional_cost(session_factory, "Config A")
+    _report_section_statuses(report_a, "Config A")
 
     print("\n=== Config B: Haiku throughout ===")
-    await run_validity_harness(
+    report_b = await run_validity_harness(
         session_factory,
         provider=_make_provider(settings.anthropic_api_key, cassette_dir),
         provider_name="anthropic",
         model=HAIKU,
         base_path=REPO_ROOT,
+        max_cost_usd=max_cost_usd,
     )
     after_b = _cassette_file_count(cassette_dir)
     _report_notional_cost(session_factory, "Combined (A + B)")
+    _report_section_statuses(report_b, "Config B")
 
     print("\n=== Real network calls (new cassette files written) ===")
     print(f"  Config A: {after_a - before_a} new cassettes")
@@ -154,5 +189,18 @@ if __name__ == "__main__":
         help="SQLite file for this recording pass's studies (default: a "
         "temp-dir scratch file, never the project's sul.db).",
     )
+    parser.add_argument(
+        "--max-cost-usd",
+        type=float,
+        default=1.0,
+        help="Per-check budget ceiling (PROJECT_SPEC.md §M6 Deviation 11 -- "
+        "'per-check', not a shared whole-harness total: discriminative "
+        "validity spends it twice, once per artefact study, and acquiescence/"
+        "position bias each get their own). Default $1.00 is ~10x the "
+        "observed real cost of a full artefact study on this 5-persona panel "
+        "($0.05-0.11) -- generous enough not to block a legitimate run, low "
+        "enough to actually catch a runaway. Previously unset (unbounded); "
+        "that was an oversight, not the intent -- see Deviation 12.",
+    )
     args = parser.parse_args()
-    asyncio.run(main(args.db_path))
+    asyncio.run(main(args.db_path, args.max_cost_usd))

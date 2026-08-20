@@ -26,6 +26,7 @@ def render_limitations_markdown(report: ValidityReportModel) -> str:
     return template.render(
         report=report,
         MEASURED=MeasurementStatus.MEASURED,
+        PARTIALLY_MEASURED=MeasurementStatus.PARTIALLY_MEASURED,
         NOT_MEASURED_OFFLINE=MeasurementStatus.NOT_MEASURED_OFFLINE,
     )
 

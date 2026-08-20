@@ -1,0 +1,52 @@
+{
+  "request": {
+    "body": "{\"max_tokens\":400,\"messages\":[{\"role\":\"assistant\",\"content\":\"You've just landed on this page for the first time, looking to try the product out. Go ahead and sign up for the free trial.\"},{\"role\":\"user\",\"content\":\"Okay, let me see what I need to fill out here. So I need to enter my full name... alright, I'll put that in. Then there's this email field, but wait, where's the label for that? It just says... nothing? Is that supposed to be for work email or something? And then password. Um, let me just try filling these out. I'm a bit confused about that middle field though - should I put my work email there or my regular email?\"},{\"role\":\"assistant\",\"content\":\"When you saw that middle field without a clear label, what made you unsure whether to use your work email or personal email?\"},{\"role\":\"user\",\"content\":\"Well, the first field says 'Full name' really clearly, and the third one says 'Password', but that middle one... it's just blank. There's no label next to it telling me what to put in. I mean, I can see it's an email field because of the type, but there's nothing saying 'Work email' or 'Personal email' or anything. So I had to guess. In my head I was thinking it might be work email since this looks like a sign-up for a work app, but I'm not actually sure. If it's required - which I'm assuming it is since all these fields seem to be - then I should know what goes there before I submit, you know?\"},{\"role\":\"assistant\",\"content\":\"When you were deciding between work email and personal email for that unlabeled field, did you feel like you needed more information before moving forward, or did you just pick one and continue?\"},{\"role\":\"user\",\"content\":\"Honestly, I'm stuck right now. I don't want to just guess and put in the wrong thing. Like, if this is supposed to be my work email and I put in my personal one, maybe it won't work later or something. But there's nothing telling me which one it should be. I could just try one, but... I don't know. It feels like I'm missing information that should be right there on the form. Should I just pick one and see what happens, or am I supposed to know this already?\"}],\"model\":\"claude-haiku-4-5\",\"output_config\":{\"format\":{\"type\":\"json_schema\",\"schema\":{\"type\":\"object\",\"description\":\"One adaptive follow-up question, generated only when the persona's\\nprior turn signalled confusion or abandonment.\",\"title\":\"ModeratorFollowup\",\"properties\":{\"question\":{\"type\":\"string\",\"title\":\"Question\",\"description\":\"{minLength: 1}\"}},\"additionalProperties\":false,\"required\":[\"question\"]}}},\"system\":\"You are a research moderator running a usability session. You know the study's\\nresearch goal and the task the participant was given. You never speak in\\ncharacter as the participant and you never reveal the research goal to them\\ndirectly -- you turn it into natural follow-up questions instead.\\n\\nResearch goal: Determine whether new users can sign up without getting stuck on unclear required fields or mismatched pricing.\\n\\nTask given to the participant: You've just landed on this page for the first time, looking to try the product out. Go ahead and sign up for the free trial.\\n\\nQuestions you might want to explore, if relevant to what just happened:\\n- Was the pricing clear?\\n- Was anything confusing?\\n\\nThe participant just showed signs of confusion or of giving up. Ask exactly\\none natural, specific follow-up question that probes what went wrong for\\nthem, in their own session's terms -- not a repetition of the task, and not\\na direct restatement of the research goal.\\n\",\"temperature\":0.7}",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "anthropic-version": "2023-06-01",
+      "connection": "keep-alive",
+      "content-length": "3571",
+      "content-type": "application/json",
+      "host": "api.anthropic.com",
+      "user-agent": "AsyncAnthropic/Python 0.122.0",
+      "x-stainless-arch": "other:amd64",
+      "x-stainless-async": "async:asyncio",
+      "x-stainless-lang": "python",
+      "x-stainless-os": "Windows",
+      "x-stainless-package-version": "0.122.0",
+      "x-stainless-read-timeout": "600",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "CPython",
+      "x-stainless-runtime-version": "3.12.14",
+      "x-stainless-timeout": "600"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": "{\"model\":\"claude-haiku-4-5-20251001\",\"id\":\"msg_011CeES8ZGXHYP2uUxTViX6S\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"question\\\": \\\"Before you decide to pick one and try it, what would actually help you feel confident about which email to enter in that field?\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":911,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":34,\"service_tier\":\"standard\",\"inference_geo\":\"not_available\"}}",
+    "headers": {
+      "anthropic-organization-id": "5b3e4fcb-d6c4-453b-9fd7-2574eb74997d",
+      "anthropic-ratelimit-requests-limit": "10000",
+      "anthropic-ratelimit-requests-remaining": "9999",
+      "anthropic-ratelimit-requests-reset": "2026-08-20T17:58:14Z",
+      "anthropic-workspace-id": "wrkspc_01EaixtsBQZRPAqSNKiXYgwy",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "a2e348f11f460032-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "date": "Thu, 20 Aug 2026 17:58:15 GMT",
+      "request-id": "req_011CeES8YQvd4PryLYWpHhZE",
+      "server": "cloudflare",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-1c942c4dce95ad120a9cf7c4cd280af8-2786b54f32bbdf4b-01",
+      "transfer-encoding": "chunked",
+      "vary": "Accept-Encoding",
+      "x-robots-tag": "none"
+    },
+    "status_code": 200
+  }
+}

@@ -100,7 +100,15 @@ class DiscriminativeValiditySection(BaseModel):
 
 
 class AcquiescenceSection(BaseModel):
-    """PROJECT_SPEC.md §M6.3."""
+    """PROJECT_SPEC.md §M6.3.
+
+    `subjects_attempted`/`subjects_measured` (§M6 Deviation 11) are the
+    denominator behind the rates below -- populated whenever `status` is
+    `MEASURED` or `PARTIALLY_MEASURED` (never for `NOT_MEASURED_OFFLINE`,
+    where no probe call was dispatched at all). Equal when `status` is
+    `MEASURED`; `subjects_measured < subjects_attempted` is exactly what
+    `PARTIALLY_MEASURED` means.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -111,11 +119,15 @@ class AcquiescenceSection(BaseModel):
     positive_agree_rate: float | None = None
     negative_agree_rate: float | None = None
     agreement_gap: float | None = None
+    subjects_attempted: int | None = None
+    subjects_measured: int | None = None
     provenance: list[AgentProvenance]
 
 
 class PositionBiasSection(BaseModel):
-    """PROJECT_SPEC.md §M6.4."""
+    """PROJECT_SPEC.md §M6.4. See `AcquiescenceSection` for what
+    `subjects_attempted`/`subjects_measured` mean.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +137,8 @@ class PositionBiasSection(BaseModel):
     first_position_share_original_order: float | None = None
     first_position_share_reversed_order: float | None = None
     preference_shift: float | None = None
+    subjects_attempted: int | None = None
+    subjects_measured: int | None = None
     provenance: list[AgentProvenance]
 
 

@@ -1,0 +1,52 @@
+{
+  "request": {
+    "body": "{\"max_tokens\":400,\"messages\":[{\"role\":\"user\",\"content\":\"[0] moderator: You've just landed on this page for the first time, looking to try the product out. Go ahead and sign up for the free trial.\\n[1] persona: Okay, let me fill this out. I'll start with my name... *typing* ...and then my work email here. Now I need a password. Alright, I've got all three fields filled in. Let me click the 'Start free trial' button to sign up.\"}],\"model\":\"claude-sonnet-5\",\"output_config\":{\"format\":{\"type\":\"json_schema\",\"schema\":{\"$defs\":{\"FindingCategory\":{\"type\":\"string\",\"enum\":[\"blocker\",\"confusion\",\"missing_info\",\"trust\",\"pricing\",\"delight\"],\"description\":\"Fixed taxonomy an Analyst classifies Findings into (spec \u00a7M4).\",\"title\":\"FindingCategory\"},\"_RunAnalystFinding\":{\"type\":\"object\",\"title\":\"_RunAnalystFinding\",\"properties\":{\"category\":{\"$ref\":\"#/$defs/FindingCategory\"},\"severity\":{\"type\":\"integer\",\"title\":\"Severity\",\"description\":\"{maximum: 5, minimum: 1}\"},\"summary\":{\"type\":\"string\",\"title\":\"Summary\",\"description\":\"{minLength: 1}\"},\"evidence_turn_ordinal\":{\"type\":\"integer\",\"title\":\"Evidence Turn Ordinal\",\"description\":\"{const: 1}\"}},\"additionalProperties\":false,\"required\":[\"category\",\"severity\",\"summary\",\"evidence_turn_ordinal\"]}},\"type\":\"object\",\"title\":\"_RunAnalystFindings\",\"properties\":{\"findings\":{\"type\":\"array\",\"title\":\"Findings\",\"items\":{\"$ref\":\"#/$defs/_RunAnalystFinding\"}}},\"additionalProperties\":false}}},\"system\":\"You are a research analyst. You are given one completed usability session's\\ntranscript and nothing else -- no research goal, no other sessions, no\\nidentity of the person who ran it. Extract structured findings from it.\\n\\nClassify each finding into exactly one of these categories:\\n- blocker: the participant could not complete the task at all.\\n- confusion: the participant was unsure what to do or what something meant.\\n- missing_info: the participant needed information that wasn't available.\\n- trust: the participant expressed doubt, suspicion, or discomfort.\\n- pricing: the finding concerns cost, fees, or pricing clarity.\\n- delight: the participant reacted positively to something that worked well.\\n\\nRate each finding's severity from 1 (trivial) to 5 (severe). Cite the exact\\ntranscript turn ordinal each finding is drawn from. If nothing noteworthy\\nhappened, return an empty list of findings -- do not invent one to have\\nsomething to report.\\n\"}",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "anthropic-version": "2023-06-01",
+      "connection": "keep-alive",
+      "content-length": "2399",
+      "content-type": "application/json",
+      "host": "api.anthropic.com",
+      "user-agent": "AsyncAnthropic/Python 0.122.0",
+      "x-stainless-arch": "other:amd64",
+      "x-stainless-async": "async:asyncio",
+      "x-stainless-lang": "python",
+      "x-stainless-os": "Windows",
+      "x-stainless-package-version": "0.122.0",
+      "x-stainless-read-timeout": "600",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "CPython",
+      "x-stainless-runtime-version": "3.12.14",
+      "x-stainless-timeout": "600"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CeESAiE66FmtfDPLj5kPz\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"EosECpABCBAYAipAPfPs5/qTa6pHCOeACrmS8jjtI1YvcbVrr3lDLC17Z9cnPNJB/gmlzMYAPyyuNPaeFiPU3DOdMaOSJnkukAWuOzIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ1YjNlNGZjYi1kNmM0LTQ1M2ItOWZkNy0yNTc0ZWI3NDk5N2SoAdaAndQGEgz9R5gyaE6c9GX+lYUaDOwaZB817U/bZbZHmyIww4BFSGmjz3MSLfuSLoRyCuTkDStG18jj64kVMPypcay5VWJHv8fs/7sQ3/l57QDrKqcC5SW97nwuV7UwuwjxP12eFs2B9mMlidR+HlqATyPONw7LHlOrfLtTLzNkHRgNfNIcIjQt1qG2nwpxdonLwnZlGGWHQDFmyKOWuC/oAcr6Z1gAEOctmPKAuH5XOALeVqBOJ+gKI9yG5SDCvdlZXNn2W+qgCAfxoDVGc9ahCQc8ZYI1mOdih8x9gGSOUbJl96F/8cPoMJrTuXXdhazhah33ZUXZIjAI1c+fxwM4Vf2DT0XroK6Izk+FHQcPg/7pf/j89kP6I7a+0l9XCQm1xL5jOk27Hqi2QxIc0kvNajOgky/hcih8XRf8/SwzwWL8je57MTtgd4p6k85TKgth/tn0kfJ1oQ3QZC9Xw1QsgLovo6vitZ0B7/kUbYQ331fvIxiYH/xGyVtRmBgB\"},{\"type\":\"text\",\"text\":\"{\\\"findings\\\":[]}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":1087,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":115,\"output_tokens_details\":{\"thinking_tokens\":104},\"service_tier\":\"standard\",\"inference_geo\":\"global\"}}",
+    "headers": {
+      "anthropic-organization-id": "5b3e4fcb-d6c4-453b-9fd7-2574eb74997d",
+      "anthropic-ratelimit-requests-limit": "10000",
+      "anthropic-ratelimit-requests-remaining": "9999",
+      "anthropic-ratelimit-requests-reset": "2026-08-20T17:58:43Z",
+      "anthropic-workspace-id": "wrkspc_01EaixtsBQZRPAqSNKiXYgwy",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "a2e349a77e770032-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "date": "Thu, 20 Aug 2026 17:58:46 GMT",
+      "request-id": "req_011CeESAh6cnxWtGgcyyZ39y",
+      "server": "cloudflare",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-70ad3e1466be6ed5bca74b4a4a334eb1-ceb0cf96340b0cc4-01",
+      "transfer-encoding": "chunked",
+      "vary": "Accept-Encoding",
+      "x-robots-tag": "none"
+    },
+    "status_code": 200
+  }
+}

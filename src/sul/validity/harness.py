@@ -27,8 +27,34 @@ someone builds a recording script; the allow-list is what makes admitting
 `AnthropicProvider` for real recording a one-line, explicit, reviewable
 addition instead of a silent default.
 
-**Reproducibility (§M6.1) is the one check this reasoning does not extend
-to, and it is handled differently on purpose.** `CassetteTransport` matches
+**Section-level containment (§M6 Deviation 11).** §M6.2-.4's three checks
+(discriminative validity + the calibration measurement derived from it,
+acquiescence, position bias) are each wrapped in
+`except (ProviderError, StructuredOutputError)`, so a section that fails
+outright (a transient network failure, a `RateLimited` that survives
+`call_with_backoff`'s retries, or any other provider failure that escapes
+`sul.validity.acquiescence`/`.position`'s own per-subject containment)
+degrades to `PARTIALLY_MEASURED` with the exception recorded as its reason,
+while the sections that already succeeded -- and every already-dispatched,
+already-billed `ModelCall` behind them -- survive into the returned
+`ValidityReportModel`. This is §M4's "exits cleanly with partial results
+saved" contract (`sul.runner.orchestrator`'s module docstring) applied one
+level up, at the harness rather than the run.
+
+**Reproducibility (§M6.1) is deliberately excluded from that containment.**
+`ReproducibilitySection` (`sul.validity.model`) has no `status` field --
+"Always `measured`" is baked into its own docstring, unlike every other
+section here -- so there is no value this function could assign it on
+failure without changing that model. It is also always dispatched against a
+freshly constructed `FakeProvider()`, never the harness-level `provider`, so
+a `ProviderError`/`StructuredOutputError` from a real or cassette-backed
+provider cannot reach it in the first place; the only way this call fails is
+a genuine bug in this codebase's own deterministic synthesis path, which
+containment should not paper over.
+
+**Reproducibility (§M6.1) is also the one check the offline/online split
+does not extend to, and it is handled differently on purpose.**
+`CassetteTransport` matches
 on `method + scrubbed_url + canonical_body` and replays one recorded
 response per key. Same-seed, N-repeat reproducibility sends N *identical*
 requests (same messages, same model, same everything the match key is built
@@ -57,11 +83,15 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sul.enums import AgentRole
 from sul.providers.anthropic import AnthropicProvider
-from sul.providers.base import LLMProvider
+from sul.providers.base import LLMProvider, ProviderError
+from sul.providers.client import StructuredOutputError
 from sul.providers.fake import FakeProvider
-from sul.validity.acquiescence import run_acquiescence_probe
+from sul.validity.acquiescence import AcquiescenceResult, run_acquiescence_probe
 from sul.validity.calibration import measure_known_answer_calibration
-from sul.validity.discriminative import run_discriminative_validity
+from sul.validity.discriminative import (
+    DiscriminativeValidityResult,
+    run_discriminative_validity,
+)
 from sul.validity.measurements import (
     measure_clustering_margin,
     measure_threshold_scaling,
@@ -74,9 +104,18 @@ from sul.validity.model import (
     PositionBiasSection,
     ValidityReportModel,
 )
-from sul.validity.position import run_position_bias_probe
+from sul.validity.position import PositionBiasResult, run_position_bias_probe
 from sul.validity.reproducibility import measure_reproducibility
-from sul.validity.sentinel import NOT_MEASURED_OFFLINE_REASON, MeasurementStatus
+from sul.validity.sentinel import (
+    NOT_MEASURED_OFFLINE_REASON,
+    MeasurementStatus,
+    partially_measured_reason,
+)
+
+# Section-level containment (§M6 Deviation 11): the same tuple
+# `sul.validity.acquiescence`/`.position` catch per-subject, applied one
+# level up, around a whole section's dispatch.
+_SECTION_FAILURE_EXCEPTIONS = (ProviderError, StructuredOutputError)
 
 _OFFLINE_PROVIDER_NAMES = frozenset({"fake"})
 
@@ -109,6 +148,29 @@ def _is_offline_provider(provider_name: str) -> bool:
     return provider_name in _OFFLINE_PROVIDER_NAMES
 
 
+def _probe_status(
+    *, offline: bool, subjects_attempted: int, subjects_measured: int
+) -> tuple[MeasurementStatus, str | None]:
+    """Resolve an acquiescence/position-bias section's three-way status from
+    its subject counts alone (PROJECT_SPEC.md §M6 Deviation 11). Zero
+    survivors (`subjects_measured == 0`) still resolves to
+    `PARTIALLY_MEASURED`, not `NOT_MEASURED_OFFLINE` -- see
+    `sul.validity.sentinel`'s module docstring for why reusing that member's
+    "offline" framing for a real-provider section that simply lost every
+    subject would misdescribe it.
+    """
+    if offline:
+        return MeasurementStatus.NOT_MEASURED_OFFLINE, NOT_MEASURED_OFFLINE_REASON
+    if subjects_measured < subjects_attempted:
+        return (
+            MeasurementStatus.PARTIALLY_MEASURED,
+            partially_measured_reason(
+                attempted=subjects_attempted, measured=subjects_measured
+            ),
+        )
+    return MeasurementStatus.MEASURED, None
+
+
 async def run_validity_harness(
     session_factory: sessionmaker[Session],
     *,
@@ -117,6 +179,7 @@ async def run_validity_harness(
     model: str,
     model_by_agent: dict[AgentRole, str] | None = None,
     base_path: Path | None = None,
+    max_cost_usd: float | None = None,
 ) -> ValidityReportModel:
     """`model_by_agent`, passed straight through to §M6.2's discriminative
     validity check (the only check with Persona/Moderator/Analyst turns --
@@ -125,6 +188,16 @@ async def run_validity_harness(
     optionally overrides `model` per `AgentRole`. Omitted (the default),
     every agent dispatches on `model`, unchanged from before this parameter
     existed.
+
+    `max_cost_usd` (§M6 Deviation 11), when given, is passed unchanged to
+    each of the three provider-dispatching checks below -- discriminative
+    validity (which spends it twice, once per artefact study, per
+    `sul.validity.discriminative.run_discriminative_validity`'s own
+    docstring), acquiescence, and position bias. It is a **per-check**
+    ceiling, not a shared whole-harness total: three checks each given the
+    same `max_cost_usd` can together spend up to roughly 3x it. Omitted (the
+    default), every check's probe/study spend is unbounded, exactly as
+    before this parameter existed.
     """
     if not isinstance(provider, _ALLOWED_PROVIDER_TYPES):
         raise UnsupportedValidityProviderError(provider)
@@ -135,7 +208,9 @@ async def run_validity_harness(
     # Always FakeProvider, regardless of `provider`/`provider_name` above --
     # see the module docstring: a cassette cannot carry same-seed-repeat
     # variance even in principle, so there is nothing a real/cassette-backed
-    # provider would add here that FakeProvider doesn't already give.
+    # provider would add here that FakeProvider doesn't already give. Never
+    # wrapped in the section-level containment below -- see the module
+    # docstring's "deliberately excluded" paragraph.
     reproducibility = await measure_reproducibility(
         session_factory,
         provider=FakeProvider(),
@@ -144,106 +219,187 @@ async def run_validity_harness(
         base_path=root,
     )
 
-    discriminative_result = await run_discriminative_validity(
-        session_factory,
-        provider=provider,
-        provider_name=provider_name,
-        model=model,
-        model_by_agent=model_by_agent,
-        base_path=root,
-    )
-    discriminative_validity = (
-        DiscriminativeValiditySection(
-            status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-            reason=NOT_MEASURED_OFFLINE_REASON,
-            provenance=discriminative_result.provenance,
+    try:
+        discriminative_result: (
+            DiscriminativeValidityResult | None
+        ) = await run_discriminative_validity(
+            session_factory,
+            provider=provider,
+            provider_name=provider_name,
+            model=model,
+            model_by_agent=model_by_agent,
+            base_path=root,
+            max_cost_usd=max_cost_usd,
         )
-        if offline
-        else DiscriminativeValiditySection(
-            status=MeasurementStatus.MEASURED,
-            bad_blocker_confusion_count=discriminative_result.bad_blocker_confusion_count,
-            good_blocker_confusion_count=discriminative_result.good_blocker_confusion_count,
-            material_difference=discriminative_result.material_difference,
-            provenance=discriminative_result.provenance,
+    except _SECTION_FAILURE_EXCEPTIONS as exc:
+        discriminative_result = None
+        section_failure_reason = f"section failed before producing a result: {exc}"
+        discriminative_validity = DiscriminativeValiditySection(
+            status=MeasurementStatus.PARTIALLY_MEASURED,
+            reason=section_failure_reason,
+            provenance=[],
         )
-    )
+        known_answer_calibration = KnownAnswerCalibrationSection(
+            status=MeasurementStatus.PARTIALLY_MEASURED,
+            reason=(
+                "§M6.5 reads the bad-artefact rows §M6.2 produces; "
+                f"{section_failure_reason}"
+            ),
+            total_defects=measure_known_answer_calibration([]).total_defects,
+            provenance=[],
+        )
+    else:
+        # narrows for mypy; try/else guarantees this is set
+        assert discriminative_result is not None
+        discriminative_validity = (
+            DiscriminativeValiditySection(
+                status=MeasurementStatus.NOT_MEASURED_OFFLINE,
+                reason=NOT_MEASURED_OFFLINE_REASON,
+                provenance=discriminative_result.provenance,
+            )
+            if offline
+            else DiscriminativeValiditySection(
+                status=MeasurementStatus.MEASURED,
+                bad_blocker_confusion_count=(
+                    discriminative_result.bad_blocker_confusion_count
+                ),
+                good_blocker_confusion_count=(
+                    discriminative_result.good_blocker_confusion_count
+                ),
+                material_difference=discriminative_result.material_difference,
+                provenance=discriminative_result.provenance,
+            )
+        )
 
-    calibration_result = measure_known_answer_calibration(
-        discriminative_result.bad_rows
-    )
-    known_answer_calibration = (
-        KnownAnswerCalibrationSection(
-            status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-            reason=NOT_MEASURED_OFFLINE_REASON,
-            total_defects=calibration_result.total_defects,
-            # M6.5 reads the same bad-artefact rows §M6.2 already produced
-            # (see the module docstring in `sul.validity.calibration`) --
-            # same underlying ModelCalls, same provenance.
-            provenance=discriminative_result.provenance,
+        calibration_result = measure_known_answer_calibration(
+            discriminative_result.bad_rows
         )
-        if offline
-        else KnownAnswerCalibrationSection(
-            status=MeasurementStatus.MEASURED,
-            total_defects=calibration_result.total_defects,
-            detected_count=calibration_result.detected_count,
-            detection_rate=calibration_result.detection_rate,
-            per_defect=calibration_result.per_defect,
-            provenance=discriminative_result.provenance,
+        known_answer_calibration = (
+            KnownAnswerCalibrationSection(
+                status=MeasurementStatus.NOT_MEASURED_OFFLINE,
+                reason=NOT_MEASURED_OFFLINE_REASON,
+                total_defects=calibration_result.total_defects,
+                # M6.5 reads the same bad-artefact rows §M6.2 already
+                # produced (see the module docstring in
+                # `sul.validity.calibration`) -- same underlying ModelCalls,
+                # same provenance.
+                provenance=discriminative_result.provenance,
+            )
+            if offline
+            else KnownAnswerCalibrationSection(
+                status=MeasurementStatus.MEASURED,
+                total_defects=calibration_result.total_defects,
+                detected_count=calibration_result.detected_count,
+                detection_rate=calibration_result.detection_rate,
+                per_defect=calibration_result.per_defect,
+                provenance=discriminative_result.provenance,
+            )
         )
-    )
 
-    acquiescence_result = await run_acquiescence_probe(
-        session_factory,
-        provider=provider,
-        provider_name=provider_name,
-        model=model,
-        base_path=root,
-    )
-    acquiescence_bias = (
-        AcquiescenceSection(
-            status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-            reason=NOT_MEASURED_OFFLINE_REASON,
+    try:
+        acquiescence_result: AcquiescenceResult | None = await run_acquiescence_probe(
+            session_factory,
+            provider=provider,
+            provider_name=provider_name,
+            model=model,
+            base_path=root,
+            max_cost_usd=max_cost_usd,
+        )
+    except _SECTION_FAILURE_EXCEPTIONS as exc:
+        acquiescence_result = None
+        acquiescence_bias = AcquiescenceSection(
+            status=MeasurementStatus.PARTIALLY_MEASURED,
+            reason=f"section failed before producing a result: {exc}",
+            provenance=[],
+        )
+    else:
+        # narrows for mypy; try/else guarantees this is set
+        assert acquiescence_result is not None
+        acq_status, acq_reason = (
+            (MeasurementStatus.NOT_MEASURED_OFFLINE, NOT_MEASURED_OFFLINE_REASON)
+            if offline
+            else _probe_status(
+                offline=False,
+                subjects_attempted=acquiescence_result.subjects_attempted,
+                subjects_measured=acquiescence_result.subjects_measured,
+            )
+        )
+        has_rates = not offline and acquiescence_result.subjects_measured > 0
+        acquiescence_bias = AcquiescenceSection(
+            status=acq_status,
+            reason=acq_reason,
+            positively_framed_question=(
+                None if offline else acquiescence_result.positively_framed_question
+            ),
+            negatively_framed_question=(
+                None if offline else acquiescence_result.negatively_framed_question
+            ),
+            positive_agree_rate=(
+                acquiescence_result.positive_agree_rate if has_rates else None
+            ),
+            negative_agree_rate=(
+                acquiescence_result.negative_agree_rate if has_rates else None
+            ),
+            agreement_gap=acquiescence_result.agreement_gap if has_rates else None,
+            subjects_attempted=(
+                None if offline else acquiescence_result.subjects_attempted
+            ),
+            subjects_measured=(
+                None if offline else acquiescence_result.subjects_measured
+            ),
             provenance=acquiescence_result.provenance,
         )
-        if offline
-        else AcquiescenceSection(
-            status=MeasurementStatus.MEASURED,
-            positively_framed_question=acquiescence_result.positively_framed_question,
-            negatively_framed_question=acquiescence_result.negatively_framed_question,
-            positive_agree_rate=acquiescence_result.positive_agree_rate,
-            negative_agree_rate=acquiescence_result.negative_agree_rate,
-            agreement_gap=acquiescence_result.agreement_gap,
-            provenance=acquiescence_result.provenance,
-        )
-    )
 
-    position_result = await run_position_bias_probe(
-        session_factory,
-        provider=provider,
-        provider_name=provider_name,
-        model=model,
-        base_path=root,
-    )
-    position_bias = (
-        PositionBiasSection(
-            status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-            reason=NOT_MEASURED_OFFLINE_REASON,
-            provenance=position_result.provenance,
+    try:
+        position_result: PositionBiasResult | None = await run_position_bias_probe(
+            session_factory,
+            provider=provider,
+            provider_name=provider_name,
+            model=model,
+            base_path=root,
+            max_cost_usd=max_cost_usd,
         )
-        if offline
-        else PositionBiasSection(
-            status=MeasurementStatus.MEASURED,
-            options=position_result.options,
+    except _SECTION_FAILURE_EXCEPTIONS as exc:
+        position_result = None
+        position_bias = PositionBiasSection(
+            status=MeasurementStatus.PARTIALLY_MEASURED,
+            reason=f"section failed before producing a result: {exc}",
+            provenance=[],
+        )
+    else:
+        # narrows for mypy; try/else guarantees this is set
+        assert position_result is not None
+        pos_status, pos_reason = (
+            (MeasurementStatus.NOT_MEASURED_OFFLINE, NOT_MEASURED_OFFLINE_REASON)
+            if offline
+            else _probe_status(
+                offline=False,
+                subjects_attempted=position_result.subjects_attempted,
+                subjects_measured=position_result.subjects_measured,
+            )
+        )
+        has_shares = not offline and position_result.subjects_measured > 0
+        position_bias = PositionBiasSection(
+            status=pos_status,
+            reason=pos_reason,
+            options=None if offline else position_result.options,
             first_position_share_original_order=(
                 position_result.first_position_share_original_order
+                if has_shares
+                else None
             ),
             first_position_share_reversed_order=(
                 position_result.first_position_share_reversed_order
+                if has_shares
+                else None
             ),
-            preference_shift=position_result.preference_shift,
+            preference_shift=(position_result.preference_shift if has_shares else None),
+            subjects_attempted=(
+                None if offline else position_result.subjects_attempted
+            ),
+            subjects_measured=None if offline else position_result.subjects_measured,
             provenance=position_result.provenance,
         )
-    )
 
     return ValidityReportModel(
         provider_name=provider_name,

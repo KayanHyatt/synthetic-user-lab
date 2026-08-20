@@ -68,7 +68,13 @@ async def run_discriminative_validity(
     good_artefact_path: str = DEFAULT_GOOD_ARTEFACT_PATH,
     panel_path: str = DEFAULT_PANEL_PATH,
     base_path: Path | None = None,
+    max_cost_usd: float | None = None,
 ) -> DiscriminativeValidityResult:
+    """`max_cost_usd`, when given, is passed to each of the two
+    `run_artefact_study` calls below independently -- see that function's
+    docstring: the bad-artefact and good-artefact studies get two separate
+    ceilings, not one shared across both.
+    """
     root = base_path if base_path is not None else Path.cwd()
 
     bad_run = await run_artefact_study(
@@ -81,6 +87,7 @@ async def run_discriminative_validity(
         panel_path=panel_path,
         base_path=root,
         study_name="M6.2 discriminative validity: bad artefact",
+        max_cost_usd=max_cost_usd,
     )
     good_run = await run_artefact_study(
         session_factory,
@@ -92,6 +99,7 @@ async def run_discriminative_validity(
         panel_path=panel_path,
         base_path=root,
         study_name="M6.2 discriminative validity: good artefact",
+        max_cost_usd=max_cost_usd,
     )
 
     bad_count = blocker_confusion_count(bad_run.rows)

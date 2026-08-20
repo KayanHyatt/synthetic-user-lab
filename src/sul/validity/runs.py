@@ -23,6 +23,7 @@ from sul.enums import AgentRole, ArtefactKind, RunStatus
 from sul.models import Artefact, Panel, Persona, Run
 from sul.models._util import utcnow
 from sul.providers.base import LLMProvider
+from sul.providers.budget import BudgetGuard
 from sul.runner.orchestrator import run_study
 from sul.validity.data import load_finding_rows
 from sul.validity.materialize import get_or_create_artefact, materialize_repeat_study
@@ -65,6 +66,7 @@ async def run_artefact_study(
     research_goal: str = DEFAULT_RESEARCH_GOAL,
     scenario_task: str = DEFAULT_SCENARIO_TASK,
     questions: list[str] | None = None,
+    max_cost_usd: float | None = None,
 ) -> ArtefactStudyRun:
     """Materialise `study_name` against `artefact_path` (reusing an existing
     `Artefact` row for that content if one already exists in this session),
@@ -74,6 +76,13 @@ async def run_artefact_study(
     `model_by_agent`, passed straight through to `run_study`, optionally
     overrides `model` per `AgentRole` -- omitted (the default), every agent
     dispatches on `model`, unchanged from before this parameter existed.
+
+    `max_cost_usd` (PROJECT_SPEC.md §M6 Deviation 11), when given, becomes a
+    `BudgetGuard` scoped to *this* materialised study -- `run_study` already
+    accepts one (§M4); this function just supplies it, the same way it
+    already supplies everything else `run_study` needs. Two calls against
+    two different artefacts (as §M6.2's discriminative-validity check makes)
+    get two independent ceilings, not a shared one.
     """
     with session_factory() as session:
         artefact_id = get_or_create_artefact(
@@ -96,6 +105,11 @@ async def run_artefact_study(
         )
         session.commit()
 
+    budget = (
+        BudgetGuard(session_factory, materialized.study_id, max_cost_usd)
+        if max_cost_usd is not None
+        else None
+    )
     await run_study(
         session_factory,
         study_id=materialized.study_id,
@@ -104,6 +118,7 @@ async def run_artefact_study(
         provider_name=provider_name,
         model=model,
         model_by_agent=model_by_agent,
+        budget=budget,
     )
 
     with session_factory() as session:
@@ -184,13 +199,21 @@ async def materialize_probe_subjects(
     subjects: list[ProbeSubject] = []
     for persona_id, persona_name, card_text in persona_rows:
         with session_scope(session_factory) as session:
+            # PENDING, not COMPLETED -- see `mark_probe_run_completed`/
+            # `mark_probe_run_failed` below (PROJECT_SPEC.md §M6 Deviation
+            # 11). A probe's `Run` row must be able to say "this subject's
+            # probe call never finished," the same as M4's `_prepare_run`
+            # (`sul.runner.orchestrator`) does for a turn-loop run; setting
+            # both `status=COMPLETED` and `finished_at` here, before any
+            # probe call is dispatched, made every subject read
+            # `COMPLETED, error=None` regardless of whether its probe ever
+            # ran.
             run = Run(
                 study_id=materialized.study_id,
                 persona_id=persona_id,
                 scenario_id=materialized.scenario_id,
-                status=RunStatus.COMPLETED,
+                status=RunStatus.PENDING,
                 started_at=utcnow(),
-                finished_at=utcnow(),
             )
             session.add(run)
             session.flush()
@@ -213,6 +236,33 @@ async def materialize_probe_subjects(
     )
 
 
+def mark_probe_run_completed(
+    session_factory: sessionmaker[Session], run_id: int
+) -> None:
+    """Mirrors `sul.runner.orchestrator._mark_run_completed` for a probe
+    `Run` (not imported from there -- that helper is private to the M4
+    turn-loop runner, and a probe run has no `Turn`/`Finding` rows to
+    reconcile).
+    """
+    with session_scope(session_factory) as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        run.status = RunStatus.COMPLETED
+        run.finished_at = utcnow()
+
+
+def mark_probe_run_failed(
+    session_factory: sessionmaker[Session], run_id: int, error: str
+) -> None:
+    """Mirrors `sul.runner.orchestrator._mark_run_failed` for a probe `Run`."""
+    with session_scope(session_factory) as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        run.status = RunStatus.FAILED
+        run.finished_at = utcnow()
+        run.error = error
+
+
 __all__ = [
     "DEFAULT_QUESTIONS",
     "DEFAULT_RESEARCH_GOAL",
@@ -220,6 +270,8 @@ __all__ = [
     "ArtefactStudyRun",
     "ProbeMaterialization",
     "ProbeSubject",
+    "mark_probe_run_completed",
+    "mark_probe_run_failed",
     "materialize_probe_subjects",
     "run_artefact_study",
 ]

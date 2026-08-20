@@ -1,0 +1,52 @@
+{
+  "request": {
+    "body": "{\"max_tokens\":400,\"messages\":[{\"role\":\"user\",\"content\":\"[0] moderator: You've just landed on this page for the first time, looking to try the product out. Go ahead and sign up for the free trial.\\n[1] persona: Okay, let me fill this out. I'll start with my name... got it. Now there's an email field here with no label\u2014is that supposed to be my work email or personal? I guess I'll assume work email based on the context. Let me enter that. Now password... alright, I've got all three fields filled in. Clicking the start free trial button now.\"}],\"model\":\"claude-sonnet-5\",\"output_config\":{\"format\":{\"type\":\"json_schema\",\"schema\":{\"$defs\":{\"FindingCategory\":{\"type\":\"string\",\"enum\":[\"blocker\",\"confusion\",\"missing_info\",\"trust\",\"pricing\",\"delight\"],\"description\":\"Fixed taxonomy an Analyst classifies Findings into (spec \u00a7M4).\",\"title\":\"FindingCategory\"},\"_RunAnalystFinding\":{\"type\":\"object\",\"title\":\"_RunAnalystFinding\",\"properties\":{\"category\":{\"$ref\":\"#/$defs/FindingCategory\"},\"severity\":{\"type\":\"integer\",\"title\":\"Severity\",\"description\":\"{maximum: 5, minimum: 1}\"},\"summary\":{\"type\":\"string\",\"title\":\"Summary\",\"description\":\"{minLength: 1}\"},\"evidence_turn_ordinal\":{\"type\":\"integer\",\"title\":\"Evidence Turn Ordinal\",\"description\":\"{const: 1}\"}},\"additionalProperties\":false,\"required\":[\"category\",\"severity\",\"summary\",\"evidence_turn_ordinal\"]}},\"type\":\"object\",\"title\":\"_RunAnalystFindings\",\"properties\":{\"findings\":{\"type\":\"array\",\"title\":\"Findings\",\"items\":{\"$ref\":\"#/$defs/_RunAnalystFinding\"}}},\"additionalProperties\":false}}},\"system\":\"You are a research analyst. You are given one completed usability session's\\ntranscript and nothing else -- no research goal, no other sessions, no\\nidentity of the person who ran it. Extract structured findings from it.\\n\\nClassify each finding into exactly one of these categories:\\n- blocker: the participant could not complete the task at all.\\n- confusion: the participant was unsure what to do or what something meant.\\n- missing_info: the participant needed information that wasn't available.\\n- trust: the participant expressed doubt, suspicion, or discomfort.\\n- pricing: the finding concerns cost, fees, or pricing clarity.\\n- delight: the participant reacted positively to something that worked well.\\n\\nRate each finding's severity from 1 (trivial) to 5 (severe). Cite the exact\\ntranscript turn ordinal each finding is drawn from. If nothing noteworthy\\nhappened, return an empty list of findings -- do not invent one to have\\nsomething to report.\\n\"}",
+    "headers": {
+      "accept": "application/json",
+      "accept-encoding": "gzip, deflate",
+      "anthropic-version": "2023-06-01",
+      "connection": "keep-alive",
+      "content-length": "2516",
+      "content-type": "application/json",
+      "host": "api.anthropic.com",
+      "user-agent": "AsyncAnthropic/Python 0.122.0",
+      "x-stainless-arch": "other:amd64",
+      "x-stainless-async": "async:asyncio",
+      "x-stainless-lang": "python",
+      "x-stainless-os": "Windows",
+      "x-stainless-package-version": "0.122.0",
+      "x-stainless-read-timeout": "600",
+      "x-stainless-retry-count": "0",
+      "x-stainless-runtime": "CPython",
+      "x-stainless-runtime-version": "3.12.14",
+      "x-stainless-timeout": "600"
+    },
+    "method": "POST",
+    "url": "https://api.anthropic.com/v1/messages"
+  },
+  "response": {
+    "body": "{\"model\":\"claude-sonnet-5\",\"id\":\"msg_011CeES6mGHJGEatcm38qVWo\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"EpAGCpABCBAYAipAbzT8GIQEWAcQ4hLSaS9HY2Do0bFgSVNmngnnrIehMYqvMZfNB27ppzZijmrPEI0Slwaow8aY3CIFatFvkqYKkDIPY2xhdWRlLXNvbm5ldC01OABCCHRoaW5raW5nWiQ1YjNlNGZjYi1kNmM0LTQ1M2ItOWZkNy0yNTc0ZWI3NDk5N2SoAaOAndQGEgyj8huHpkYsheenTSoaDFcBNQGQWRl0b2xrFCIwCCrNeh5Kxo9DoLyKrcDhOVybF8HzNECgGCPjlG0bpEIMZP6KjFS6PkP42BP+CreGKqwENiN9TysRN9OnaVB20lRCglufytwcDUkrgmdzIaOL0hiBV4sMChWF/bTpu1YEnmQ3JFXwKTqy3eQFNM3rJ+V2POHGXYiBZdBVcQzjYkN5qy4UMpiLhnkDPJCgb9y2YqYeWzdPfZHmsVuAxaW5JAc8v5FXhl0mXmMUDF+uFASfcCmQno8IGERlZ+51bh2REIGt4KuW0SpOmGX71kBzQVmutTyC2vs00aJ1emJjFh07BXvySOz/zxrmyiRsejy8qGL8xFjChDuOJZOeCN3yQKsi2VZ7HnDltolzgjFeYyN6uYLODAU5Vv4VygGzWeEv8glMgHFxqNF3wJC1U9v1bFDrLg6CtjeR+o5H2Vtz6Ufv25HGKpqiD/FDE/6Rx0L8PqhTGCin6ILsDGfl1x5VoVZYKmZgtQkC2k8pGqxUR3bu/+MYHHgqapt1pAVnejsDBzQq1Xt5QciHrZT8xaR4VEPtS7LIvXhQJcVcDPcaUgkyG1biiojjE5caV7hIMsqlFDfO0lxKyzlWCFP7kf3jo+jbtgCjjBjLi7GkSiSoOomIdjSw+hB6paIAHG+u0zXorV8kL3qz0cYVmqyMvfBOyNcTx5rRFwMhsTM/7FlWzLgNGLpa2baiYhxKKMwpSJbKOIGnto4nyNlUmHyVpTK9DEkEWLr/1yq/oFveRaWptvq0dz/Fu0ozeI/78aquJiViqdlSeUqTOO4qbXaZvr/svTqebmy5H83HPkEcQYPq0RgB\"},{\"type\":\"text\",\"text\":\"{\\\"findings\\\":[{\\\"category\\\":\\\"confusion\\\",\\\"severity\\\":3,\\\"summary\\\":\\\"The email field had no label, leaving the participant unsure whether to enter a work or personal email address; they had to guess based on context.\\\",\\\"evidence_turn_ordinal\\\":1}]}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"stop_details\":null,\"usage\":{\"input_tokens\":1114,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation\":{\"ephemeral_5m_input_tokens\":0,\"ephemeral_1h_input_tokens\":0},\"output_tokens\":249,\"output_tokens_details\":{\"thinking_tokens\":167},\"service_tier\":\"standard\",\"inference_geo\":\"global\"}}",
+    "headers": {
+      "anthropic-organization-id": "5b3e4fcb-d6c4-453b-9fd7-2574eb74997d",
+      "anthropic-ratelimit-requests-limit": "10000",
+      "anthropic-ratelimit-requests-remaining": "9999",
+      "anthropic-ratelimit-requests-reset": "2026-08-20T17:57:49Z",
+      "anthropic-workspace-id": "wrkspc_01EaixtsBQZRPAqSNKiXYgwy",
+      "cf-cache-status": "DYNAMIC",
+      "cf-ray": "a2e34858cd3e0032-LHR",
+      "connection": "keep-alive",
+      "content-encoding": "gzip",
+      "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      "content-type": "application/json",
+      "date": "Thu, 20 Aug 2026 17:57:55 GMT",
+      "request-id": "req_011CeES6kAZHk5YZjsVd8Zdh",
+      "server": "cloudflare",
+      "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+      "traceresponse": "00-c7a37e55b5a43de859c45893a4310bdd-57529f9a378a24f6-01",
+      "transfer-encoding": "chunked",
+      "vary": "Accept-Encoding",
+      "x-robots-tag": "none"
+    },
+    "status_code": 200
+  }
+}

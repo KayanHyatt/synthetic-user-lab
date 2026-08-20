@@ -7,8 +7,11 @@ uniformly with the other adapters.
 
 from __future__ import annotations
 
+from typing import Any
+
 import anthropic
 import httpx
+from anthropic import transform_schema
 from anthropic.types import MessageParam
 from pydantic import BaseModel
 
@@ -25,6 +28,26 @@ from sul.providers.base import (
 
 DEFAULT_MODEL = "claude-opus-5"
 
+# Models that reject sampling parameters outright (400) rather than ignoring
+# them: Claude 4.6+ removed `temperature`/`top_p`/`top_k` (PROJECT_SPEC.md §M6
+# Deviation 10 -- found via a real recording pass, §M6 Deviation 9, that made
+# zero real Analyst calls and so never reached this). Matched by prefix, not
+# an exact-string allow-list, so a dated snapshot of one of these families
+# (e.g. a future `claude-opus-5-<date>`) is still caught. `claude-haiku-4-5`
+# is deliberately absent -- it still accepts `temperature`.
+_NO_SAMPLING_PARAMS_MODEL_PREFIXES: tuple[str, ...] = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-sonnet-5",
+)
+
+
+def _accepts_temperature(model: str) -> bool:
+    return not model.startswith(_NO_SAMPLING_PARAMS_MODEL_PREFIXES)
+
 
 class AnthropicProvider:
     """`LLMProvider` backed by the real Anthropic API.
@@ -36,11 +59,17 @@ class AnthropicProvider:
     completions are not seed-reproducible the way FakeProvider's synthetic
     ones are.
 
-    `response_schema` is likewise accepted but not enforced API-side: the
-    shared call path (`sul.providers.client.ModelClient`) validates the
-    returned text against the schema and drives the one bounded repair turn
-    itself, so every adapter behaves identically regardless of whether the
-    underlying API has a native structured-output mode.
+    `response_schema`, when given, is turned into an `output_config.format`
+    JSON-schema constraint on the request (PROJECT_SPEC.md §M6 Deviation
+    10) -- the API rejects a response that doesn't validate, so the text
+    block this adapter returns is guaranteed schema-valid JSON before
+    `sul.providers.client.ModelClient` ever calls `model_validate_json` on
+    it. This does not replace that shared call path's one bounded repair
+    turn: it stays live for `max_tokens` truncation and for the other
+    adapters (`sul.providers.openai`, `.gemini`), which still ignore
+    `response_schema` entirely, exactly as this class's docstring used to
+    say *this* adapter did. See §M2's implementation note for the pointer to
+    this deviation.
     """
 
     def __init__(
@@ -73,22 +102,25 @@ class AnthropicProvider:
             if m.role != "system"
         ]
 
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": turns,
+        }
+        if system:
+            kwargs["system"] = system
+        if _accepts_temperature(model):
+            kwargs["temperature"] = temperature
+        if response_schema is not None:
+            kwargs["output_config"] = {
+                "format": {
+                    "type": "json_schema",
+                    "schema": transform_schema(response_schema),
+                }
+            }
+
         try:
-            if system:
-                response = await self._client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    system=system,
-                    messages=turns,
-                )
-            else:
-                response = await self._client.messages.create(
-                    model=model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    messages=turns,
-                )
+            response = await self._client.messages.create(**kwargs)
         except anthropic.RateLimitError as exc:
             raise RateLimited(str(exc)) from exc
         except anthropic.APIStatusError as exc:
