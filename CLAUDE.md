@@ -33,3 +33,10 @@ the same targets; run it as `.\make.ps1 <target>`:
 .\make.ps1 demo      # runs a complete study with FakeProvider, no API key (M7)
 .\make.ps1 validate  # runs the M6 validity harness, writes docs/validity_report.md
 ```
+
+## Environment notes
+- TLS: `SSL_CERT_FILE` pointed at a Windows root-store export
+  (`windows-roots.pem`) worked first try against the real Anthropic API —
+  `httpx`/`anthropic`/`certifi` needed no extra configuration. If a future
+  session hits an SSL verification error, look at whether `SSL_CERT_FILE` is
+  still set and pointing at a valid file before assuming it's a code issue.

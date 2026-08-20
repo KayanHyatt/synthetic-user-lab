@@ -221,6 +221,13 @@ class LLMProvider(Protocol):
 > is implemented in `src/sul/cli.py` now, ahead of the rest of the Typer
 > CLI, which remains M7's scope.
 
+> **M2 environment note.** The first real (non-cassette) call to the
+> Anthropic API from this Windows machine, via `AnthropicProvider`, worked on
+> the first try with `SSL_CERT_FILE` set to a Windows root-store export
+> (`windows-roots.pem`) — no `httpx`/`certifi` cert-bundle wrangling needed.
+> Recorded so a future session doesn't re-diagnose TLS before assuming a code
+> problem.
+
 **Acceptance:** `make test` passes with no network (verify by running with network
 disabled). Cost for a demo run is queryable via `sul cost <study_id>`.
 
@@ -387,6 +394,26 @@ Async runner over the persona × scenario grid.
 **Acceptance:** 20 personas × 1 scenario against `artefacts/bad_onboarding.html`
 completes offline via FakeProvider; all transcripts and findings persist; kill
 the process at 50% and re-run — it completes without duplicate `Run` rows.
+
+> **M4 deviation (post-milestone): per-agent model override.** `run_study`
+> gained an optional `model_by_agent: dict[AgentRole, str] | None = None`
+> keyword, resolved independently at each of the three dispatch sites inside
+> `_run_one_persona` (persona turn, moderator follow-up, analyst) against a
+> fallback to the existing single `model` argument — an agent absent from
+> the mapping (including every agent, when the argument is omitted entirely)
+> dispatches on `model`, unchanged from before this existed. This is not
+> something the spec's turn loop called for; it exists to let a study run
+> the Persona and Moderator on one model while the Analyst runs on another,
+> for the two-configuration recording pass (config B = config A with the
+> Analyst swapped) that follows this milestone. `ModelClient`/`ModelCall`
+> needed no change — the `model` string was always a per-dispatch argument,
+> never fixed at `ModelClient` construction, so each agent's `ModelCall` rows
+> already record whichever model actually served that call. Covered by
+> `tests/test_model_by_agent.py` (routing, backward-compatible omission,
+> and partial-mapping fallback for unlisted agents); `configs/pricing.yaml`
+> gained four zero-cost `fake:` entries so those tests can assert distinct
+> `ModelCall.model` values per agent without three dispatches colliding on
+> the pre-existing `fake-1`.
 
 ---
 

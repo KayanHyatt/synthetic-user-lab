@@ -26,9 +26,24 @@ openai: {}
 
 gemini: {}
 
-# FakeProvider never spends real money; priced at zero so cost math has a
-# home for it without a special case in the caller.
+# FakeProvider/ScriptedProvider never spend real money; priced at zero so
+# cost math has a home for it without a special case in the caller. The
+# per-agent names below exist only so tests exercising `run_study`'s
+# `model_by_agent` override (tests/test_model_by_agent.py) can assert one
+# ModelCall.model per AgentRole without three calls colliding on "fake-1".
 fake:
   fake-1:
+    input: 0.0
+    output: 0.0
+  fallback-model:
+    input: 0.0
+    output: 0.0
+  persona-model:
+    input: 0.0
+    output: 0.0
+  moderator-model:
+    input: 0.0
+    output: 0.0
+  analyst-model:
     input: 0.0
     output: 0.0

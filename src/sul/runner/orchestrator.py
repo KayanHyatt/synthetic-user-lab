@@ -288,6 +288,7 @@ async def _run_one_persona(
     provider: LLMProvider,
     provider_name: str,
     model: str,
+    model_by_agent: dict[AgentRole, str] | None,
     temperature: float,
     max_tokens: int,
     max_followups: int,
@@ -295,6 +296,10 @@ async def _run_one_persona(
     db_lock: asyncio.Lock,
     semaphore: asyncio.Semaphore,
 ) -> RunOutcome:
+    persona_model = (model_by_agent or {}).get(AgentRole.PERSONA, model)
+    moderator_model = (model_by_agent or {}).get(AgentRole.MODERATOR, model)
+    analyst_model = (model_by_agent or {}).get(AgentRole.ANALYST, model)
+
     async with semaphore:
         persona_client = ModelClient(
             provider,
@@ -371,7 +376,7 @@ async def _run_one_persona(
                         run_persona_turn,
                         client=persona_client,
                         context=context,
-                        model=model,
+                        model=persona_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                         seed=persona_seed,
@@ -415,7 +420,7 @@ async def _run_one_persona(
                         scenario_task=static_context.scenario_task,
                         candidate_questions=static_context.candidate_questions,
                         transcript=transcript_so_far,
-                        model=model,
+                        model=moderator_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
                         seed=followup_seed,
@@ -454,7 +459,7 @@ async def _run_one_persona(
                     run_analyst,
                     client=analyst_client,
                     context=analyst_context,
-                    model=model,
+                    model=analyst_model,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     seed=analyst_seed,
@@ -501,6 +506,7 @@ async def run_study(
     provider: LLMProvider,
     provider_name: str,
     model: str,
+    model_by_agent: dict[AgentRole, str] | None = None,
     temperature: float = 0.7,
     max_tokens: int = 400,
     max_followups: int = 3,
@@ -514,6 +520,12 @@ async def run_study(
     than `BudgetExceeded`/`StructuredOutputError` (both handled per-run, see
     the module docstring) propagates out of this call uncaught, leaving
     whatever was already committed in place for the next call to resume.
+
+    `model` is the default model dispatched to every agent. `model_by_agent`
+    optionally overrides it per `AgentRole` (`PERSONA`, `MODERATOR`,
+    `ANALYST`) — an agent missing from the mapping falls back to `model`, so
+    existing single-model callers that never pass `model_by_agent` are
+    unaffected.
     """
     static_context = _load_static_context(
         session_factory, study_id=study_id, scenario_id=scenario_id
@@ -547,6 +559,7 @@ async def run_study(
                 provider=provider,
                 provider_name=provider_name,
                 model=model,
+                model_by_agent=model_by_agent,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 max_followups=max_followups,
