@@ -72,6 +72,32 @@ def scrub_headers(headers: Any) -> dict[str, str]:
     return {k: v for k, v in headers.items() if not _is_sensitive_name(k)}
 
 
+# Headers describing the *wire* representation of a response
+# (PROJECT_SPEC.md §M6 Deviation 13): `_write` always stores `response.text`
+# -- httpx's already-decompressed body -- never the raw wire bytes, so a
+# recorded `content-encoding` (e.g. `gzip`, what every real Anthropic
+# response arrives as) is stale the moment it's written, and describes a
+# transformation that was already undone. Replaying a cassette that still
+# claims `content-encoding: gzip` over already-plaintext content makes
+# httpx/the `anthropic` SDK try to gzip-decompress plaintext -- surfacing,
+# opaquely, as `anthropic.APIConnectionError` on every single replay
+# (first hit the moment `record=True` ever ran against the real API,
+# since every prior cassette test recorded via `httpx.MockTransport`,
+# which never sets `content-encoding`). `content-length` and
+# `transfer-encoding` are dropped for the same reason -- both describe the
+# original (possibly compressed, possibly chunked) wire body, not the
+# plaintext this cassette actually stores.
+_STALE_RESPONSE_HEADERS = frozenset(
+    {"content-encoding", "content-length", "transfer-encoding"}
+)
+
+
+def drop_stale_response_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {
+        k: v for k, v in headers.items() if k.lower() not in _STALE_RESPONSE_HEADERS
+    }
+
+
 def scrub_url(url: Any) -> Any:
     """Redact sensitive query params (e.g. Gemini's `?key=...`)."""
     if not url.params:
@@ -181,7 +207,7 @@ class CassetteCore:
             },
             "response": {
                 "status_code": response.status_code,
-                "headers": scrub_headers(response.headers),
+                "headers": drop_stale_response_headers(scrub_headers(response.headers)),
                 "body": response.text,
             },
         }
@@ -229,6 +255,7 @@ __all__ = [
     "CassetteCore",
     "CassetteMissError",
     "CassetteTransport",
+    "drop_stale_response_headers",
     "match_key",
     "scrub_headers",
     "scrub_url",

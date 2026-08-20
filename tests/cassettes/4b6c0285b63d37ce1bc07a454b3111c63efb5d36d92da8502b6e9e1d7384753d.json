@@ -35,7 +35,6 @@
       "cf-cache-status": "DYNAMIC",
       "cf-ray": "a2e34a3c8eba0032-LHR",
       "connection": "keep-alive",
-      "content-encoding": "gzip",
       "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
       "content-type": "application/json",
       "date": "Thu, 20 Aug 2026 17:59:08 GMT",
@@ -43,7 +42,6 @@
       "server": "cloudflare",
       "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
       "traceresponse": "00-322a3c1955b393348def9dd40cd7ccd0-c65c0eb42570ad78-01",
-      "transfer-encoding": "chunked",
       "vary": "Accept-Encoding",
       "x-robots-tag": "none"
     },

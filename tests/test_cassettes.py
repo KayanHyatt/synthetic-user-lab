@@ -12,13 +12,19 @@ canonicalised body -- not on the headers that were just stripped.
 
 from __future__ import annotations
 
+import gzip
+import json as jsonlib
 from collections.abc import Mapping
 from pathlib import Path
 
 import httpx
 import pytest
 
-from sul.providers.cassette import CassetteMissError, CassetteTransport
+from sul.providers.cassette import (
+    CassetteMissError,
+    CassetteTransport,
+    drop_stale_response_headers,
+)
 
 SENTINEL_KEY = "sk-ant-sentinel0000000000000000000000000000"
 REQUEST_URL = "https://api.anthropic.com/v1/messages"
@@ -247,3 +253,87 @@ async def test_replay_miss_raises_and_never_touches_the_network(
             await client.post(
                 REQUEST_URL, json={"model": "claude-opus-5", "messages": []}
             )
+
+
+def test_drop_stale_response_headers_removes_only_wire_encoding_headers() -> None:
+    headers = {
+        "content-encoding": "gzip",
+        "content-length": "1234",
+        "transfer-encoding": "chunked",
+        "content-type": "application/json",
+        "anthropic-organization-id": "org_123",
+    }
+    assert drop_stale_response_headers(headers) == {
+        "content-type": "application/json",
+        "anthropic-organization-id": "org_123",
+    }
+
+
+_GZIP_MOCK_PAYLOAD = jsonlib.dumps(
+    {
+        "id": "msg_01",
+        "model": "claude-opus-5",
+        "stop_reason": "end_turn",
+        "content": [{"type": "text", "text": "hello from the mock"}],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+)
+
+
+def _gzip_mock_handler(request: httpx.Request) -> httpx.Response:
+    """A real Anthropic response arrives gzip-compressed over the wire
+    (PROJECT_SPEC.md §M6 Deviation 13) -- this is the one MockTransport
+    fixture in this file that actually reproduces that, unlike
+    `_mock_handler` above (a plain, uncompressed synthetic response, which
+    is exactly why this bug went undetected through every cassette test
+    written before the real recording pass: `content-encoding` was never
+    set on anything this suite recorded).
+    """
+    return httpx.Response(
+        200,
+        headers={
+            "content-encoding": "gzip",
+            "content-type": "application/json",
+        },
+        content=gzip.compress(_GZIP_MOCK_PAYLOAD.encode("utf-8")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_gzip_encoded_response_replays_correctly(cassette_dir: Path) -> None:
+    """The regression this milestone's real recording pass found (§M6
+    Deviation 12/13): a cassette recorded from a gzip-compressed response
+    must store the decompressed text and drop the now-stale
+    `content-encoding` header, so a later replay doesn't try to
+    gzip-decompress plaintext.
+    """
+    body = {"model": "claude-opus-5", "messages": [{"role": "user", "content": "hi"}]}
+    mock_transport = httpx.MockTransport(_gzip_mock_handler)
+    record_transport = CassetteTransport(mock_transport, cassette_dir, record=True)
+    async with httpx.AsyncClient(transport=record_transport) as client:
+        recorded = await client.post(REQUEST_URL, json=body)
+    assert recorded.status_code == 200
+    assert recorded.json()["content"][0]["text"] == "hello from the mock"
+
+    cassette_files = list(cassette_dir.glob("*.json"))
+    assert len(cassette_files) == 1
+    cassette = jsonlib.loads(cassette_files[0].read_text(encoding="utf-8"))
+    # The stored body is the decompressed plaintext, not the gzip bytes --
+    # and the header claiming it's still gzip-encoded must be gone.
+    assert cassette["response"]["body"] == _GZIP_MOCK_PAYLOAD
+    assert "content-encoding" not in cassette["response"]["headers"]
+    assert "content-length" not in cassette["response"]["headers"]
+
+    def _network_should_not_be_called(
+        request: httpx.Request,
+    ) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("replay must not touch the network")
+
+    replay_transport = CassetteTransport(
+        httpx.MockTransport(_network_should_not_be_called), cassette_dir, record=False
+    )
+    async with httpx.AsyncClient(transport=replay_transport) as client:
+        replayed = await client.post(REQUEST_URL, json=body)
+
+    assert replayed.status_code == 200
+    assert replayed.json()["content"][0]["text"] == "hello from the mock"

@@ -1121,6 +1121,8 @@ states at least two concrete, measured weaknesses.
 >   wire used. Whoever picks this up should re-run the offline diagnostic
 >   above against a fix before attempting Config B again — no live call is
 >   needed to verify it, only the 46 cassettes already on disk.
+>   **Fixed the same session, once §M6's own acceptance criterion turned out
+>   to depend on it — see Deviation 13 below.**
 > - `sul.runner.orchestrator._run_one_persona`'s per-run containment still
 >   only catches `(BudgetExceeded, StructuredOutputError)`, not
 >   `ProviderError` generally (carried over from Deviation 11's own "not
@@ -1147,10 +1149,102 @@ states at least two concrete, measured weaknesses.
 > 46 cassettes as-is, with Config B left open, is a deliberate choice made
 > with the person running this project, not a shortfall against this
 > section's acceptance line.
+>
+> **Amended the same session: Deviation 12's "left open" call turned out to
+> be wrong on reflection — see Deviation 13.** Committing 46 cassettes whose
+> own real numbers `docs/limitations.md` now describes, while `make
+> validate` can no longer regenerate them from what's on disk (replay was
+> broken), put a claim in the repo the code couldn't reproduce — a direct
+> violation of this section's own acceptance line ("validity report
+> generated end-to-end offline"), not a separate, deferrable concern the way
+> the *other* Deviation 12 open item (`_run_one_persona`) genuinely is.
+>
+> **Deviation 13 (same session): the cassette-replay bug fixed; the missing
+> test added; Config A's real numbers are now reproducible from the repo,
+> not just asserted in prose.** `sul.providers.cassette.CassetteCore._write`
+> now drops `content-encoding`, `content-length`, and `transfer-encoding`
+> from the stored response headers (`drop_stale_response_headers`, applied
+> after `scrub_headers`) — all three describe the *wire* representation of
+> the original response, and `_write` has only ever stored the already-
+> decompressed `response.text`, never the compressed bytes; keeping those
+> headers made the cassette's own metadata lie about its own body. Storing
+> raw compressed bytes instead (the other option) was rejected: cassettes
+> are deliberately human-readable JSON text end to end (`_write` writes
+> `json.dumps(..., indent=2)`, and `tests/test_real_cassette_scrubbing.py`
+> scans the raw file *text* for credential leaks) — binary payloads would
+> need base64 wrapping, defeating both. The already-committed 46 cassette
+> files were migrated in place (same script logic, run once by hand — a
+> pure local rewrite of `response.headers`, no cassette content or `request`
+> field touched, so `match_key()` still recomputes identically); all 46
+> re-verified to replay cleanly with the same offline poison-pill-transport
+> diagnostic Deviation 12 used to *find* the bug in the first place.
+> `tests/test_cassettes.py` gained a direct regression test
+> (`test_a_gzip_encoded_response_replays_correctly`): the one `MockTransport`
+> fixture in that file that actually sets `content-encoding: gzip` on a
+> *really* gzip-compressed body — every fixture before it returned an
+> uncompressed synthetic response, which is exactly why this bug shipped
+> invisibly through every cassette test written before tonight.
+>
+> **The test that should have existed before the cassettes were committed:**
+> `tests/support/run_recorded_validity_report_script.py` (mirroring
+> `tests/support/run_report_script.py`'s cross-process pattern exactly, for
+> `sul.report`'s own reason — a same-process "render twice" check cannot
+> catch a wall-clock/iteration-order defect, and §M6.2 clusters *real*
+> Analyst findings from these cassettes, exercising `sul.analysis
+> .clustering`'s own documented order-sensitivity for the first time against
+> non-synthetic input) replays all 46 cassettes as Config A
+> (`record=False` — a miss is a hard `CassetteMissError`, never a silent
+> live dispatch) and renders the validity report.
+> `tests/test_validity_cassette_report_determinism.py` runs that script
+> twice under different `PYTHONHASHSEED`, asserts the two runs are
+> byte-identical, and asserts the result equals a new committed file,
+> `docs/validity_report_recorded.md` — Config A's real, cassette-backed
+> report, generated the same way and committed alongside `docs
+> /validity_report.md`'s always-`FakeProvider` counterpart. A second
+> assertion checks `discriminative_validity`/`acquiescence_bias`
+> /`position_bias`/`known_answer_calibration` all come back `measured`
+> directly from the harness's own `MeasurementStatus`, not inferred by
+> string-matching the rendered markdown.
+>
+> **What the real numbers say, now that they're reproducible and not just
+> asserted:** bad-artefact blocker/confusion count 6 vs. good-artefact 0
+> (material difference: `True`) — discriminative validity holds up against a
+> real Sonnet Analyst. Known-answer calibration: 1/3 seeded defects detected
+> (`missing-email-label` caught; `dead-plan-details-link` and
+> `price-contradiction` missed). Acquiescence gap: 1.0 (maximal, on this
+> 5-persona panel, this seed, this framing pair) — a real, measured signal
+> that the panel's replies tracked question framing here, not something to
+> read past as expected/neutral. Position bias: shift 0.0 — no measurable
+> position effect on this panel. None of these numbers are estimated or
+> extrapolated for the CV-bullet placeholders in §7 below; §7 still says
+> `[X]` deliberately; filling those in from `docs
+> /validity_report_recorded.md` is a documentation task for whoever writes
+> the README (§M8), not something to backfill here.
+>
+> `_run_one_persona`'s per-`ProviderError` containment gap (Deviation 11's
+> and Deviation 12's own "not done" note) is **not** fixed by this
+> deviation, and stays open — see the carry-forward note at the top of §M7
+> below. It is unrelated to the cassette bug above (it never actually fired
+> during either the failing runs' persona dispatch *or* the fix's own
+> verification, since replay-only diagnostics never touch `run_study`) and
+> remains real, independent, unfixed.
 
 ---
 
 ### M7 — Interface and packaging
+
+> **Carried forward from §M6 (Deviations 11–13), not yet fixed:**
+> `sul.runner.orchestrator._run_one_persona`'s per-run exception handling
+> only catches `(BudgetExceeded, StructuredOutputError)`, never
+> `ProviderError` generally. A persona whose real dispatch fails on
+> anything else (`RateLimited` exhausted, `Refused`, `BadRequest`,
+> `Overloaded`, a raw `APIConnectionError`) leaves its `Run` row stuck
+> wherever it was (never marked `FAILED`, no `error` recorded) and its
+> `asyncio` task is never cancelled — found live during the §M6 recording
+> pass (misdiagnosed there as the root cause of a failure that was actually
+> a cassette bug, Deviation 12/13; this gap is real independent of that).
+> Not part of this section's own scope as written; flagged here as the
+> nearest natural checkpoint to pick it up before it's forgotten.
 
 - Typer CLI: `sul personas sample`, `sul run`, `sul report`, `sul cost`,
   `sul validate`.
