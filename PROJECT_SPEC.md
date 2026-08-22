@@ -1551,13 +1551,31 @@ reviewer with no keys can still see it work in 60 seconds.
 > two calls with byte-identical bodies now share one `Artefact` row while
 > still creating two independent `Study` rows
 > (`::test_materialize_study_reuses_an_existing_artefact_with_the_same_content`).
-> `sul.demo.run_demo` separately reuses an existing `Study` row by name
-> (`config.name`) when re-invoked, so repeat `sul demo` runs resume the same
-> demo study rather than accumulating a new one on every call — verified by
-> running `.\make.ps1 demo` twice in a row against this repo's own real
-> database, not only in-process. `materialize_study`'s general
-> non-idempotency for `sul run` (two *different* studies deliberately stay
-> independent) is unchanged and is not what this deviation touches.
+> `materialize_study`'s general non-idempotency for `sul run` (two
+> *different* studies deliberately stay independent) is unchanged and is
+> not what this deviation touches.
+>
+> **Amended in the same session: the paragraph above originally continued
+> with a second mechanism, since removed.** `sul.demo.run_demo` additionally
+> reused an existing `Study` row by name (`config.name`) before calling
+> `materialize_study` at all, so that a repeated `sul demo` resumed the same
+> demo study rather than creating a new one. Asked to justify this against
+> the fix above rather than assert it, the two turned out not to be
+> complementary: reverting the `Study`-by-name reuse and calling
+> `materialize_study` twice directly (with the `Artefact`-level fix from
+> this deviation still in place) succeeds cleanly on its own — `study_id`
+> increments, `artefact_id` doesn't. The `Artefact`-level fix was already
+> sufficient; the `Study`-by-name reuse was a second, narrower idempotency
+> mechanism doing no correctness work, layered on top of a first one that
+> already did all of it. Removed rather than kept as a documented,
+> unify-later item: `run_demo` now calls `materialize_study` the same plain
+> way `sul run` does, and a repeated `sul demo` creates a fresh, independent
+> `Study` every time — consistent with `materialize_study`'s own documented
+> contract, and with the property M6's reproducibility check depends on
+> (repeated, independent materialisations of one config). Covered directly
+> by `tests/test_demo.py
+> ::test_run_demo_is_safe_to_call_twice_and_creates_two_independent_studies`,
+> not only by hand via the CLI as the original version of this note claimed.
 
 ---
 

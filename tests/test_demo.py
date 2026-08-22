@@ -30,6 +30,32 @@ async def test_run_demo_produces_a_usable_study(
     assert result.cluster_count > 0
 
 
+async def test_run_demo_is_safe_to_call_twice_and_creates_two_independent_studies(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PROJECT_SPEC.md §M7: `run_demo` used to additionally reuse an
+    existing `Study` row by name to survive a second call -- removed as
+    redundant once `materialize_study` started deduplicating `Artefact`
+    rows by content hash (the actual cause of the crash a second call used
+    to hit). This pins down the resulting, unified behaviour directly,
+    rather than leaving it checked only by hand via the CLI: two calls
+    succeed, and produce two distinct, independent studies -- the same
+    thing `sul run` does for a repeated config, with no special case here.
+    """
+    monkeypatch.setenv("SUL_DATABASE_URL", f"sqlite:///{tmp_path / 'sul.db'}")
+    from sul.config import get_settings
+
+    get_settings.cache_clear()
+
+    first = await run_demo()
+    second = await run_demo()
+
+    assert first.study_id != second.study_id
+    assert second.completed_run_count > 0
+    assert second.finding_count > 0
+    assert second.cluster_count > 0
+
+
 async def test_run_demo_never_dispatches_to_a_real_provider(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

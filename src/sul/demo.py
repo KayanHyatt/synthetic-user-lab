@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sul.config import Settings, get_settings
 from sul.db import create_all, make_engine, make_session_factory
 from sul.enums import RunStatus
-from sul.models import Run, Scenario, Study
+from sul.models import Run
 from sul.providers.fake import FakeProvider
 from sul.report.build import build_report
 from sul.runner.config import load_study_config, materialize_study
@@ -121,23 +121,38 @@ async def run_demo(
     provider, is what makes that true structurally rather than by
     convention).
 
-    **Safe to run more than once against the same database.**
-    `sul.runner.config.materialize_study` inserts a fresh `Artefact` row on
-    every call and never checks for an existing one -- fine for `sul run`
-    (each invocation is a deliberately new study), but `configs/study.demo
-    .yaml` and `configs/study.example.yaml` both point at the same
-    `artefacts/bad_onboarding.html`, and `Artefact.content_hash` is UNIQUE:
-    a second `sul demo` (or a `sul demo` after any earlier `sul run` against
-    that same artefact) would otherwise crash with an `IntegrityError`
-    rather than the "look, it worked" a reviewer running the command twice
-    should see. Found by running `.\\make.ps1 demo` for real against this
-    repo's own dev `sul.db`, which already had a `bad_onboarding.html`
-    artefact in it from earlier sessions -- the pytest suite alone, always
-    starting from an empty database, never exercised this path. Fixed here,
-    scoped to the demo only (by reusing an existing `Study` row with the
-    same `name` rather than re-materialising): `materialize_study`'s general
-    non-idempotency for `sul run` is a real, separate gap, left open --
-    PROJECT_SPEC.md's §M7 deviation note says so explicitly.
+    **Safe to run more than once against the same database -- via exactly
+    one mechanism, not two.** `configs/study.demo.yaml` and `configs/study
+    .example.yaml` both point at `artefacts/bad_onboarding.html`, and
+    `Artefact.content_hash` is UNIQUE, so a second `sul demo` (or a `sul
+    demo` after any earlier `sul run` against that same artefact) used to
+    crash with an `IntegrityError` rather than the "look, it worked" a
+    reviewer running the command twice should see -- found by running
+    `.\\make.ps1 demo` for real against this repo's own dev `sul.db`, which
+    already had that artefact materialised under a different study; the
+    pytest suite alone, always starting from an empty database, never
+    exercised this path. The fix is entirely in `materialize_study` itself
+    (PROJECT_SPEC.md §M7 deviation): it now looks up an existing `Artefact`
+    by `content_hash` before inserting, so any caller -- `sul run`, `sul
+    demo`, both -- gets a shared `Artefact` row for byte-identical content,
+    with no special-casing needed here. `run_demo` therefore just calls
+    `materialize_study` plainly, the same as `sul run` does: each invocation
+    creates a fresh, independent `Study` (`materialize_study`'s own
+    documented contract, and the property M6's reproducibility check
+    depends on -- repeated, independent materialisations of one config).
+
+    An earlier version of this function additionally reused an existing
+    `Study` row by `config.name` before calling `materialize_study` at all,
+    to avoid a second demo run creating a second `Study` row. That was
+    redundant, not complementary, with the fix above -- confirmed by
+    reverting it and calling `materialize_study` twice directly: the second
+    call succeeds on its own, reusing the `Artefact` row and creating a new,
+    independent `Study` (`study_id` increments, `artefact_id` doesn't). Two
+    mechanisms answering "is this safe to re-run" at two different scopes
+    was worth removing rather than leaving as an open question: repeat
+    `sul demo` runs now show up as separate, independent studies in the
+    dashboard, identically to repeat `sul run` invocations of the same
+    config -- one behaviour, one place it's implemented.
     """
     resolved_settings = settings or get_settings()
     config_path = study_config_path or DEFAULT_STUDY_CONFIG_PATH
@@ -148,19 +163,10 @@ async def run_demo(
 
     config = load_study_config(config_path)
     with session_factory() as session:
-        existing_study_id = session.execute(
-            select(Study.id).where(Study.name == config.name)
-        ).scalar_one_or_none()
-        if existing_study_id is not None:
-            study_id = existing_study_id
-            scenario_id = session.execute(
-                select(Scenario.id).where(Scenario.study_id == study_id)
-            ).scalar_one()
-        else:
-            materialized = materialize_study(session, config, base_path=REPO_ROOT)
-            session.commit()
-            study_id = materialized.study_id
-            scenario_id = materialized.scenario_id
+        materialized = materialize_study(session, config, base_path=REPO_ROOT)
+        session.commit()
+        study_id = materialized.study_id
+        scenario_id = materialized.scenario_id
 
     await run_study(
         session_factory,
