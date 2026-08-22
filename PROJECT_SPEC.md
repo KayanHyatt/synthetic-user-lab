@@ -1322,6 +1322,243 @@ states at least two concrete, measured weaknesses.
 a completed study with report, **without any API key set**. This matters: a
 reviewer with no keys can still see it work in 60 seconds.
 
+> **M7 is partially complete. The container half of this section's own
+> acceptance criterion is unmet, deliberately not redefined around, and left
+> open — not silently dropped.** Everything else in this section is done and
+> tested: the remaining Typer CLI (`sul personas sample`, `sul run`,
+> `sul demo`, `sul dashboard`, alongside the already-landed `sul cost`/
+> `sul report`/`sul validate`), the FastAPI + Jinja/HTMX dashboard, and
+> `make demo`. `.\make.ps1 check` is green (324 tests, up from 263 at
+> `7aba273`) and `.\make.ps1 demo` runs end to end against this repo's own
+> real, persisted `sul.db` — not just a scratch pytest fixture. **No
+> `Dockerfile`, `docker-compose.yml`, or `.dockerignore` were written this
+> session**, on explicit instruction, after this machine turned out to have
+> no Docker runtime at all: no `docker` on `PATH` in either PowerShell or Git
+> Bash, no `C:\Program Files\Docker` install directory, and `wsl -l -q`
+> reports zero installed distributions (Windows 11 **Home**, which has no
+> Hyper-V backend alternative to WSL2). A committed-but-never-built Dockerfile
+> is worse than no Dockerfile: nothing catches it lying. "fresh clone →
+> `docker compose up`" therefore cannot be demonstrated on this machine as
+> written, and per `CLAUDE.md`'s own rule ("If a milestone's acceptance
+> criteria cannot be met as written, stop and say so rather than redefining
+> them"), this stops and says so rather than quietly narrowing §M7 to "the
+> parts that don't need Docker."
+>
+> **What remains, for whichever session has a real Docker runtime:** write
+> `Dockerfile` + `docker-compose.yml` + `.dockerignore`, then execute the
+> verification plan below — none of it needs re-deriving, all of it was
+> worked out in this session's own Phase 0 report before Docker's absence was
+> confirmed:
+>
+> 1. **Cold build from a fresh clone, not the working tree.** `git clone .
+>    <tmp>` at whatever `HEAD` is by then, then `docker build --no-cache -t
+>    sul:m7 <tmp>`. Cloning proves the image needs only tracked files, and
+>    separately proves `.dockerignore` isn't papering over an untracked
+>    `.env` — see point 4.
+> 2. **TLS, in order of preference, never `verify=False`:**
+>    - Try the plain build first. The host's TLS interception is applied by
+>      software on the host; whether it reaches the container's own egress
+>      depends on where that interception sits, and this is a ten-minute
+>      experiment, not an assumption — it may simply work.
+>    - If it fails: the container inherits **neither** `SSL_CERT_FILE` nor
+>      the Windows root store — both are host-side configuration (`CLAUDE.md`'s
+>      own environment note), invisible inside any container regardless of
+>      how the image is built. `C:\dev\certs\windows-roots.pem` (the file
+>      `SSL_CERT_FILE` already points at on this host) is the input to
+>      whatever CA step the Dockerfile ends up needing: `COPY
+>      windows-roots.pem /usr/local/share/ca-certificates/host-roots.crt` +
+>      `RUN update-ca-certificates`, **in the build stage only**, with
+>      `SSL_CERT_FILE` pointed at the resulting system bundle for `uv`. The
+>      runtime stage inherits neither the `.pem` nor the env var — a runtime
+>      image that trusts a corporate MITM root is a worse artefact than one
+>      that simply can't reach the network, and the runtime image needs no
+>      egress at all (§M7's dashboard is read-only, `FakeProvider` has no
+>      transport).
+>    - Escape hatch if in-container TLS still can't be resolved:
+>      `uv export --frozen` on the host into a wheelhouse (`uv pip
+>      download`), `COPY wheels/` into the image, `uv pip install
+>      --no-index --find-links=/wheels`. Zero network at build time, which
+>      sidesteps the question entirely — fallback, not default.
+>    - Never `verify=False`, `--trusted-host`, `PIP_TRUSTED_HOST`, or
+>      `UV_INSECURE*`, in the container or out of it.
+> 3. **`uv sync --frozen`** against the committed `uv.lock` — the build must
+>    resolve nothing, so it can't install a different `scikit-learn` than the
+>    one embedded in every `ReportModel`'s own provenance.
+> 4. **Secrets-in-image check, three ways, knowing what each one catches:**
+>    a build-context check (`.dockerignore` applied to the repo's own file
+>    list, asserting `.env`/`sul.db`/`.venv/`/`*.pem` excluded and
+>    `src/sul/web/static/htmx.min.js` included — this one needs no Docker and
+>    can be written and run *before* Docker exists, so it should land in the
+>    same session as the Dockerfile, not deferred); a final-filesystem check
+>    (`docker run --rm sul:m7 sh -c '...'`, which would miss an add-then-delete
+>    layer); and a `docker save`-and-extract layer scan for `.env`, `sk-ant-`,
+>    `*.db` across every layer tarball (the one that catches add-then-delete).
+>    No `ARG`/`ENV` for any API key anywhere in the Dockerfile — those persist
+>    in `docker history` in plaintext regardless of any later `RUN rm`.
+> 5. **Run-time network independence:** `docker run --network none -p ...` —
+>    every dashboard page must still serve. Stronger than auditing templates
+>    for `<link>`/`<script src>` tags by hand, and it's the assertion this
+>    project would actually want to trust.
+> 6. **The acceptance chain itself, timed, with `ANTHROPIC_API_KEY` unset in
+>    the invoking shell:** `docker compose up -d` → `curl 127.0.0.1:8000` →
+>    `.\make.ps1 demo` on the host (the host, not `docker compose exec` — the
+>    acceptance chain names `docker compose up` *before* `make demo`,
+>    implying the container is already up and watching a bind-mounted
+>    database the host process writes into) → reload the dashboard → confirm
+>    the study, its runs, a transcript, and the report all render.
+>
+> Design decisions this session left for that one, rather than inventing
+> them now without a way to verify them: whether the container's database is
+> a bind-mounted directory or a named volume; the exact publish binding
+> (`127.0.0.1:8000:8000`, not bare `8000:8000`, was this session's
+> recommendation, argued in Phase 0, but never exercised end to end); and
+> whether the image ships `tests/cassettes/` (needed so `sul validate`
+> in-container doesn't silently fall back to `FakeProvider` — §M7 5.4 below
+> covers why). None of these change what was actually built and tested this
+> session; they're packaging decisions, not interface ones.
+>
+> **Config-driven groundwork already in place, so the eventual container
+> needs no source rewrite:** `Settings.database_url` (already existed,
+> `SUL_DATABASE_URL`) is the one place both `sul demo` and `sul dashboard`
+> read the database location from — no hardcoded path anywhere in
+> `sul.web`/`sul.demo`. `Settings.dashboard_host`/`Settings.dashboard_port`
+> (new, `SUL_DASHBOARD_HOST`/`SUL_DASHBOARD_PORT`, documented in
+> `.env.example`) default to `127.0.0.1:8000` and are overridable by
+> `sul dashboard --host`/`--port`, so a future container's bind address is a
+> deploy-time decision, not a code change. Neither `sul.web` nor `sul.demo`
+> assumes `tests/` or `.env` exists at runtime.
+>
+> **Deviation (recorded, not re-litigated): the inherited `ProviderError`
+> gap (carried forward above) stays open.** It becomes user-visible only if
+> the dashboard can trigger a run; it can't — `sul.web` is strictly
+> read-only, enforced at the AST level (see below), so no route ever
+> constructs a `ModelClient` or calls `run_study`. `sul demo` and the CLI's
+> own default (`sul run`'s `--provider` defaults to `"fake"`) both run
+> `FakeProvider` exclusively, which has no transport and cannot raise
+> `ProviderError` at all. The only path that can reach the gap is
+> `sul run --provider anthropic`, a real dispatch a user asked for by name —
+> unchanged from before this milestone, not newly exposed by it.
+>
+> **Deviation: `sul.web` (the dashboard) is strictly read-only, enforced at
+> the AST level, not just by docstring.** §M7 says "Read-only is fine" —
+> this takes the stronger reading. `tests/test_agent_module_hygiene.py`
+> extends its existing per-module import check (previously scoped to
+> `sul/agents/` and `sul/runner/`) to every module under `sul/web/`: none
+> may import `sul.runner.orchestrator` (`run_study`), `sul.providers.client`
+> (`ModelClient`), or any concrete provider adapter. This is what makes an
+> unauthenticated, eventually-published port defensible — there is no code
+> path from the dashboard to an LLM dispatch, so there is no spend endpoint
+> behind it, and §M4's budget gate never needs to reach the web tier.
+>
+> **Deviation: the dashboard's report view shares `sul.report.html`'s own
+> cluster/evidence fragment (`sul/report/templates/_clusters.html.j2`,
+> extracted from `report.html.j2`) rather than re-authoring it.** One
+> escaping configuration, one markup shape — `tests/support/html_parse.py
+> ::parse_report_html` (built for M5's report) parses the dashboard's report
+> page unchanged. The extraction is behaviour-preserving:
+> `tests/test_report_rendering.py` passes unmodified against the refactored
+> template.
+>
+> **Deviation: `sul.web.templates` builds one hand-rolled `jinja2
+> .Environment(autoescape=True)`, used by every full page and every HTMX
+> partial** — not FastAPI's `Jinja2Templates` wrapper, whose default
+> `select_autoescape` only turns escaping on for template names ending
+> `.html`/`.htm`/`.xml`; every template in this project ends `.html.j2`,
+> which that default would silently miss entirely.
+> `tests/test_web_escaping.py` asserts pages and partials render through the
+> *same* `Environment` object (by identity), and round-trips M5's own
+> `ESCAPING_HAZARD_QUOTE` fixture (`tests/support/report_factory.py`,
+> extended, not forked) through the transcript page, the report page, and
+> the one HTMX partial this app serves.
+>
+> **Deviation: the standing caveat (`sul.report.model
+> .SIMULATED_PANEL_CAVEAT`, imported not retyped) sits outside every HTMX
+> swap target this app declares, checked structurally, not just rendered.**
+> `tests/support/dashboard_parse.py` parses each page into an element tree
+> with ancestor-id chains, resolves every `hx-target` (and self-targeting
+> `hx-get`) to the element id it would overwrite, and asserts the caveat's
+> own element is neither one of those ids nor a descendant of one.
+> `hx-swap-oob` (the one HTMX feature that can write outside its own
+> declared target) is asserted absent from every route outright, since the
+> ancestor-chain check can't reason about it. Every partial also repeats the
+> caveat text in its own response body, belt-and-braces, independent of the
+> structural proof.
+>
+> **Deviation: the dashboard's database connection is driver-enforced
+> read-only, not merely unused-by-convention.** `sul.web.app
+> ._read_only_session` opens SQLite via a `mode=ro&uri=true` URI;
+> `tests/test_web_readonly.py::test_read_only_session_cannot_write` proves an
+> `INSERT` attempted directly against the read-only session raises
+> `sqlite3.OperationalError` at the driver level. One engine per request,
+> disposed on exit (`sul.web.app._read_only_session`'s own docstring records
+> why: a leaked-engine-per-request design, tried first, hard-locked the
+> `.db` file on Windows after about twenty requests — found by curling a
+> real running `sul dashboard` process during this session, not by pytest
+> alone, since the in-process ASGI test transport never held the file handle
+> long enough to hit it). A missing database file renders an explicit empty
+> state ("no studies yet — run `sul demo`") rather than a 500, tested with
+> and without a `.env`/pre-existing database present.
+>
+> **Deviation: `htmx.min.js` (2.0.4) is vendored, not CDN-loaded.** `CLAUDE.md`
+> names HTMX in the stack, and §M7's own scope bullet says "Jinja/HTMX
+> dashboard" — dropping it to avoid a network dependency would have narrowed
+> that bullet, which isn't this session's call to make; a CDN `<script src>`
+> would defeat the eventual `docker run --network none` requirement the
+> moment anyone opened the dashboard offline. Fetched once, on the host, from
+> two independent CDNs (`unpkg`, `jsdelivr`) serving the same npm-published
+> artefact — byte-identical, same sha256
+> (`e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447`) — never
+> fetched at image build time. `sul.web.static_assets` pins the version and
+> hash; `tests/test_vendored_assets.py` hashes the committed file against the
+> pin on every run, so an edit to the file that doesn't also update the pin
+> fails loudly.
+>
+> **Deviation: `sul run`'s provider selection (`sul.providers.factory
+> .build_provider`) is a second allow-list, deliberately separate from
+> `run_validity_harness`'s own two-member one (§M6 Deviation 7).** `sul run`
+> may legitimately dispatch to any real adapter a user names on the command
+> line; `sul validate` must never be pointable at one by a flag at all.
+> Fusing the two would widen §M6 Deviation 7's boundary — this module exists
+> so that never has to happen. An unconfigured real provider fails with a
+> clear, typed error (`ProviderNotConfiguredError`) naming the missing
+> environment variable, not a bare exception from three layers down.
+>
+> **Deviation: `sul personas sample` prints, and writes nothing to the
+> database.** §M3's own acceptance criterion (byte-identical output across
+> two runs given the same seed) is directly checkable against stdout;
+> persisting a `Panel`/`Persona` graph is `sul run`'s job (via
+> `materialize_study`, as part of a real study), not a side effect a reader
+> would expect from "show me what this config samples to."
+> `tests/test_cli_personas_sample.py` proves both the byte-identical output
+> and the no-database-write claim directly (pointing `SUL_DATABASE_URL` at a
+> not-yet-existing file and confirming it still doesn't exist afterward).
+>
+> **Deviation (a real bug, found and fixed, not merely a design choice):
+> `materialize_study` now deduplicates `Artefact` rows by `content_hash`
+> before inserting, instead of always inserting and occasionally colliding.**
+> `Artefact.content_hash` is `UNIQUE` and — per `sul.hashing.content_hash`'s
+> own docstring — is meant as a content-address, but materialisation never
+> looked one up before writing. `configs/study.demo.yaml` and `configs
+> /study.example.yaml` both point at `artefacts/bad_onboarding.html`;
+> running `sul demo` against this repo's own real, persisted `sul.db` (which
+> already had that artefact materialised under an earlier study, from
+> earlier session work) raised `IntegrityError: UNIQUE constraint failed:
+> artefacts.content_hash` on the very first `sul demo` invocation this
+> session, before any fix — a failure mode the pytest suite never caught
+> because every test starts from an empty database. Two distinct artefact
+> bodies still get two distinct rows (`tests/test_runner_config.py
+> ::test_materialize_study_still_creates_distinct_artefacts_for_distinct_content`);
+> two calls with byte-identical bodies now share one `Artefact` row while
+> still creating two independent `Study` rows
+> (`::test_materialize_study_reuses_an_existing_artefact_with_the_same_content`).
+> `sul.demo.run_demo` separately reuses an existing `Study` row by name
+> (`config.name`) when re-invoked, so repeat `sul demo` runs resume the same
+> demo study rather than accumulating a new one on every call — verified by
+> running `.\make.ps1 demo` twice in a row against this repo's own real
+> database, not only in-process. `materialize_study`'s general
+> non-idempotency for `sul run` (two *different* studies deliberately stay
+> independent) is unchanged and is not what this deviation touches.
+
 ---
 
 ### M8 — Documentation

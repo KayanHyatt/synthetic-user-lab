@@ -1,0 +1,23 @@
+{# Named `dashboard_report.html.j2`, not `report.html.j2`: `sul.report`'s
+   `templates/` directory already has a `report.html.j2` (the M5 standalone
+   report), and `sul.web.templates.env`'s `ChoiceLoader` resolves template
+   names across both packages -- a same-named file here would shadow it
+   silently. `_clusters.html.j2`, included below, resolves from
+   `sul.report`'s templates via the same loader, since `sul.web` ships no
+   file of that name. #}
+{% extends "base.html.j2" %}
+{% block title %}{{ report.study_name }} — report{% endblock %}
+{% block heading %}{{ report.study_name }} — report{% endblock %}
+{% block content %}
+<p><a href="/studies/{{ report.study_id }}/runs">&larr; runs</a></p>
+<ul>
+<li>Personas with a completed run (denominator for every fraction below): {{ report.total_personas }}</li>
+<li>Included runs: {{ report.included_run_count }}</li>
+{% for exc in report.excluded_runs %}
+<li>Excluded runs ({{ exc.status }}): {{ exc.count }}</li>
+{% endfor %}
+<li>Total findings: {{ report.total_findings }}</li>
+<li>Clustering: distance_threshold={{ report.clustering_distance_threshold }}, metric={{ report.clustering_metric }}, linkage={{ report.clustering_linkage }}, scikit-learn {{ report.sklearn_version }}</li>
+</ul>
+{% include "_clusters.html.j2" %}
+{% endblock %}

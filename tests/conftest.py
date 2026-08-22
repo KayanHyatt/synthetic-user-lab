@@ -147,6 +147,23 @@ def session_factory() -> Generator[sessionmaker[Session], None, None]:
 
 
 @pytest.fixture
+def file_db_path(tmp_path: Path) -> Path:
+    """A not-yet-existing file path for a real, on-disk SQLite database, one
+    per test.
+
+    `session_factory` (above) is deliberately `:memory:` + `StaticPool` --
+    fine for every test that only ever opens one engine. `sul.web`'s
+    dashboard opens a *second*, separate read-only engine against the same
+    `Settings.database_url` (PROJECT_SPEC.md §M7: driver-enforced `mode=ro`),
+    which only makes sense against a real file two engines can both see --
+    an in-memory database is per-connection and invisible across engines.
+    Dashboard tests build their object graph through this path with one
+    engine, point `SUL_DATABASE_URL` at it, and let the app open its own.
+    """
+    return tmp_path / "sul.db"
+
+
+@pytest.fixture
 def session(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
     """A session from `session_factory`, one per test."""
     db = session_factory()

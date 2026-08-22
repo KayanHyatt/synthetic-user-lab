@@ -17,8 +17,17 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      # PROJECT_SPEC.md §M7: src/sul/web/static/htmx.min.js is a vendored
+      # third-party asset, pinned by exact sha256 (sul.web.static_assets).
+      # Its bytes must match what was actually fetched and cross-checked
+      # against two independent CDNs -- a formatting hook silently adding a
+      # trailing newline would break that provenance without anyone editing
+      # the file. Excluded from both text-mutating hooks below; still
+      # covered by check-added-large-files/detect-private-key.
       - id: end-of-file-fixer
+        exclude: ^src/sul/web/static/
       - id: trailing-whitespace
+        exclude: ^src/sul/web/static/
       - id: check-yaml
       - id: check-added-large-files
       - id: detect-private-key

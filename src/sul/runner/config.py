@@ -15,11 +15,13 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sul.enums import ArtefactKind
 from sul.gitinfo import current_git_sha
 from sul.hashing import config_hash, content_hash
+from sul.models import Artefact
 from sul.personas.archetypes import load_panel_config
 from sul.personas.persistence import persist_panel
 from sul.personas.sampler import sample_panel
@@ -107,21 +109,32 @@ def materialize_study(
     """Persist `config` as a `Study` + `Artefact` + `Panel`/`Persona`s +
     `Scenario`, and return the ids `run_study` needs.
 
-    Not idempotent -- calling this twice for the same `config` creates a
-    second, independent study (each with its own `Artefact.content_hash`
-    collision only if the artefact body is byte-identical, which is the
-    correct behaviour: two calls are two studies, not one resumed study).
+    Not idempotent at the `Study` level -- calling this twice for the same
+    `config` creates a second, independent study. `Artefact` rows *are*
+    deduplicated by `content_hash` (PROJECT_SPEC.md §M7 deviation: this was
+    the point of `Artefact.content_hash` being a content-address in the
+    first place -- see `sul.hashing.content_hash`'s own docstring -- but
+    materialisation never looked one up before inserting, so a second call
+    with a byte-identical artefact body raised `IntegrityError` on
+    `content_hash`'s UNIQUE constraint rather than reusing the existing row.
+    Found running `sul demo` twice against a database that already had
+    `artefacts/bad_onboarding.html` materialised under a different study).
     Resumability is a property of re-running `run_study` against one already-
     materialised `(study_id, scenario_id)`, not of this function.
     """
     root = base_path if base_path is not None else Path.cwd()
     artefact_body = (root / config.artefact.path).read_text(encoding="utf-8")
+    artefact_content_hash = content_hash(artefact_body)
 
-    artefact = ArtefactCreate(
-        name=config.artefact.name, kind=config.artefact.kind, body=artefact_body
-    ).to_orm()
-    session.add(artefact)
-    session.flush()
+    artefact = session.execute(
+        select(Artefact).where(Artefact.content_hash == artefact_content_hash)
+    ).scalar_one_or_none()
+    if artefact is None:
+        artefact = ArtefactCreate(
+            name=config.artefact.name, kind=config.artefact.kind, body=artefact_body
+        ).to_orm()
+        session.add(artefact)
+        session.flush()
 
     panel_config = load_panel_config(root / config.panel_config_path)
     sampled = sample_panel(panel_config)
@@ -129,7 +142,7 @@ def materialize_study(
     study_config_hash = config_hash(
         {
             "research_goal": config.research_goal,
-            "artefact_content_hash": content_hash(artefact_body),
+            "artefact_content_hash": artefact_content_hash,
             "scenario_task": config.scenario.task,
             "scenario_questions": list(config.scenario.questions),
             "panel_seed": panel_config.seed,

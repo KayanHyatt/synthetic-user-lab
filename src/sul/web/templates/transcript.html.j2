@@ -1,0 +1,10 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ transcript.persona_name }} — transcript{% endblock %}
+{% block heading %}{{ transcript.persona_name }} ({{ transcript.segment }}){% endblock %}
+{% block content %}
+<p>
+<a href="/studies/{{ transcript.study_id }}/runs">&larr; {{ transcript.study_name }} runs</a>
+· status: <span class="status-{{ transcript.status.value }}">{{ transcript.status.value }}</span>
+</p>
+{% include "partials/turns.html.j2" %}
+{% endblock %}

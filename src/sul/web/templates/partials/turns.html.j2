@@ -1,0 +1,27 @@
+{# The one HTMX partial this app serves (`GET /partials/runs/{id}/turns`),
+   swapped into a run-list row's target div. Renders the same `transcript`
+   view model `runs/{id}` (the standalone transcript page) does, via
+   `{% include %}` from that page -- one template, two entry points, so the
+   partial can never drift from the full page's markup or escaping.
+
+   Belt-and-braces caveat (PROJECT_SPEC.md §M7 5.3): the base layout's
+   `#standing-caveat` sits outside every swap target this app declares (see
+   tests/test_web_caveat.py), so a swap into this fragment's target can never
+   hide it -- but this partial repeats the caveat text anyway, so a response
+   fetched on its own (curl, a future swap target, a browser extension
+   grabbing innerHTML) still carries it. #}
+<p class="caveat caveat-inline">{{ caveat }}</p>
+{% for t in transcript.turns %}
+<div class="transcript-turn turn-{{ t.role.value }}">
+<p><strong>{{ t.role.value }}</strong> — turn {{ t.ordinal }}</p>
+<pre class="quote">{{ t.content }}</pre>
+</div>
+{% endfor %}
+{% if transcript.findings %}
+<h3>Findings</h3>
+<ul>
+{% for f in transcript.findings %}
+<li>[{{ f.category.value }}, severity {{ f.severity }}] {{ f.summary }} (evidence: turn {{ f.evidence_turn_id }})</li>
+{% endfor %}
+</ul>
+{% endif %}

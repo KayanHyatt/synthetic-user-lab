@@ -1,0 +1,39 @@
+{# Shared cluster/evidence fragment (PROJECT_SPEC.md §M7 deviation: "the
+   dashboard's report view shares this fragment rather than being a third
+   renderer"). Included by both `report.html.j2` (the M5 standalone report)
+   and `sul.web`'s dashboard report view -- one escaping configuration, one
+   markup shape, so `tests/support/html_parse.py::parse_report_html` (built
+   for the M5 report) parses dashboard output unchanged. Takes `report` from
+   its including template's context; renders nothing else. #}
+{% if not report.clusters %}
+<p>No findings were recorded for the runs included in this report.</p>
+{% endif %}
+{% for cluster in report.clusters %}
+<section class="cluster" data-cluster-id="{{ cluster.cluster_id }}">
+<h2>Cluster {{ cluster.cluster_id }}: {{ cluster.title }}</h2>
+<p>Category: {{ cluster.modal_category.value }}{% if cluster.category_disagreement %} (members disagree on category){% endif %}</p>
+<p>Frequency: {{ cluster.frequency }}/{{ cluster.denominator }} distinct personas</p>
+<p>Mean severity (model-assigned, 1-5; averaged per persona): {{ "%.2f"|format(cluster.mean_severity) }}</p>
+
+<h3>Segment breakdown</h3>
+<table class="segments">
+<tr><th>Segment</th><th>Frequency</th></tr>
+{% for seg in cluster.segment_breakdown %}
+<tr><td>{{ seg.segment }}</td><td>{{ seg.frequency }}/{{ seg.denominator }}</td></tr>
+{% endfor %}
+</table>
+
+<h3>Evidence</h3>
+{% for item in cluster.evidence %}
+<div class="evidence" data-finding-id="{{ item.finding_id }}">
+<p class="attribution">Run {{ item.run_id }}, {{ item.persona_name }} ({{ item.segment }}) — transcript turn {{ item.evidence_turn_ordinal }}</p>
+<p class="summary-line">Analyst summary: {{ item.summary }}</p>
+{% if item.quote|length > 400 %}
+<details><summary>Verbatim quote (click to expand)</summary><pre class="quote">{{ item.quote }}</pre></details>
+{% else %}
+<pre class="quote">{{ item.quote }}</pre>
+{% endif %}
+</div>
+{% endfor %}
+</section>
+{% endfor %}

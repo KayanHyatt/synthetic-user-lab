@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     cassette_dir: Path = DEFAULT_CASSETTE_DIR
     pricing_path: Path = DEFAULT_PRICING_PATH
 
+    # `sul dashboard`'s bind interface/port (PROJECT_SPEC.md §M7). Config-
+    # driven rather than hardcoded in `sul.web.app` or `sul.cli`, so a future
+    # container deployment can override either without a code change --
+    # `--host`/`--port` CLI flags (§M7) take precedence when given.
+    dashboard_host: str = "127.0.0.1"
+    dashboard_port: int = 8000
+
     # Unprefixed: matches `.env.example`, not `SUL_`-namespaced.
     record: bool = Field(
         default=False, validation_alias=AliasChoices("RECORD", "record")

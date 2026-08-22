@@ -11,29 +11,42 @@ following the same precedent -- both land ahead of the rest of the CLI
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from pathlib import Path
 
 import httpx
 import typer
+import uvicorn
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
 
 from sul.analysis.config import ClusteringConfig, load_clustering_config
 from sul.config import Settings, get_settings
 from sul.db import create_all, make_engine, make_session_factory
+from sul.demo import DemoVerificationError, run_demo
 from sul.enums import AgentRole
 from sul.models import ModelCall, Run, Study
+from sul.personas.archetypes import load_panel_config
+from sul.personas.sampler import sample_panel
 from sul.providers.anthropic import AnthropicProvider
 from sul.providers.base import LLMProvider
+from sul.providers.budget import BudgetGuard
 from sul.providers.cassette import CassetteTransport
+from sul.providers.factory import ProviderNotConfiguredError, build_provider
 from sul.providers.fake import FakeProvider
 from sul.report.build import StudyNotFoundError, build_report
 from sul.report.html import render_html
 from sul.report.markdown import render_markdown
+from sul.runner.config import load_study_config, materialize_study
+from sul.runner.orchestrator import run_study
 from sul.validity.harness import run_validity_harness
 from sul.validity.limitations import render_limitations_markdown
 from sul.validity.markdown import render_validity_markdown
+from sul.web.app import create_app
 
 app = typer.Typer(help="Synthetic User Lab CLI.")
+personas_app = typer.Typer(help="Persona sampling.")
+app.add_typer(personas_app, name="personas")
 
 # The exact model configuration recorded into tests/cassettes/ by
 # scripts/record_validity_cassettes.py's "Config A" (PROJECT_SPEC.md §M6
@@ -134,6 +147,36 @@ def cost(study_id: int) -> None:
         )
 
 
+def _write_report_files(
+    session_factory: sessionmaker[Session],
+    *,
+    study_id: int,
+    out_dir: Path,
+    clustering_config: ClusteringConfig,
+    include_failed: bool,
+) -> tuple[Path, Path]:
+    """Build and write both report formats for `study_id` to `out_dir`.
+
+    Shared by `sul report` and `sul run --report` so there is exactly one
+    place that turns a study id into `study_{id}_report.{md,html}` -- `sul
+    run --report` is not a second, parallel implementation of this.
+    """
+    with session_factory() as session:
+        report_model = build_report(
+            session,
+            study_id=study_id,
+            clustering_config=clustering_config,
+            include_failed=include_failed,
+        )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    md_path = out_dir / f"study_{study_id}_report.md"
+    html_path = out_dir / f"study_{study_id}_report.html"
+    md_path.write_text(render_markdown(report_model), encoding="utf-8")
+    html_path.write_text(render_html(report_model), encoding="utf-8")
+    return md_path, html_path
+
+
 @app.command()
 def report(
     study_id: int,
@@ -163,23 +206,17 @@ def report(
         else ClusteringConfig()
     )
 
-    with session_factory() as session:
-        try:
-            report_model = build_report(
-                session,
-                study_id=study_id,
-                clustering_config=clustering_config,
-                include_failed=include_failed,
-            )
-        except StudyNotFoundError:
-            typer.echo(f"No study with id={study_id}", err=True)
-            raise typer.Exit(code=1) from None
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    md_path = out_dir / f"study_{study_id}_report.md"
-    html_path = out_dir / f"study_{study_id}_report.html"
-    md_path.write_text(render_markdown(report_model), encoding="utf-8")
-    html_path.write_text(render_html(report_model), encoding="utf-8")
+    try:
+        md_path, html_path = _write_report_files(
+            session_factory,
+            study_id=study_id,
+            out_dir=out_dir,
+            clustering_config=clustering_config,
+            include_failed=include_failed,
+        )
+    except StudyNotFoundError:
+        typer.echo(f"No study with id={study_id}", err=True)
+        raise typer.Exit(code=1) from None
 
     typer.echo(str(md_path))
     typer.echo(str(html_path))
@@ -234,6 +271,171 @@ def validate(
 
     typer.echo(str(validity_path))
     typer.echo(str(limitations_path))
+
+
+@personas_app.command("sample")
+def personas_sample(
+    panel_config_path: Path = typer.Argument(
+        ..., help="Path to a panel config YAML file, e.g. configs/panel.example.yaml."
+    ),
+) -> None:
+    """Sample PANEL_CONFIG_PATH and print every persona's card to stdout.
+
+    Prints only -- no database write. §M3's own acceptance criterion is
+    byte-identical output across two runs given the same seed, which is
+    directly checkable against stdout; persisting a Panel/Persona graph is
+    `sul run`'s job (via `materialize_study`, as part of materialising a
+    real study), not this command's -- a sampling command that silently
+    created rows on every invocation would be a surprising side effect for
+    "show me what this config samples to".
+    """
+    config = load_panel_config(panel_config_path)
+    sampled = sample_panel(config)
+
+    typer.echo(
+        f"seed={sampled.seed} size={sampled.size} "
+        f"card_template={sampled.card_template_version}"
+    )
+    segment_counts: Counter[str] = Counter(p.segment for p in sampled.personas)
+    for segment in sorted(segment_counts):
+        typer.echo(f"  segment {segment}: {segment_counts[segment]}/{sampled.size}")
+    typer.echo("")
+    for persona in sampled.personas:
+        typer.echo(
+            f"--- persona {persona.index}: {persona.name} ({persona.segment}) ---"
+        )
+        typer.echo(persona.card_text)
+
+
+@app.command()
+def run(
+    study_config_path: Path = typer.Argument(
+        ..., help="Path to a study config YAML file, e.g. configs/study.example.yaml."
+    ),
+    provider_name: str = typer.Option(
+        "fake", "--provider", help="fake | anthropic | openai | gemini."
+    ),
+    concurrency: int | None = typer.Option(
+        None, "--concurrency", help="Override the study config's own concurrency."
+    ),
+    render_report: bool = typer.Option(
+        False, "--report", help="Also render the report once the run completes."
+    ),
+    out_dir: Path = typer.Option(
+        Path("reports"),
+        "--out-dir",
+        help="Report output directory, used only with --report.",
+    ),
+) -> None:
+    """Materialise STUDY_CONFIG_PATH and run it end to end."""
+    settings = get_settings()
+
+    try:
+        provider = build_provider(provider_name, settings)
+    except ProviderNotConfiguredError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+
+    engine = make_engine(settings.database_url)
+    create_all(engine)
+    session_factory = make_session_factory(engine)
+
+    config = load_study_config(study_config_path)
+    with session_factory() as session:
+        materialized = materialize_study(session, config, base_path=Path.cwd())
+        session.commit()
+
+    budget = None
+    if config.budget.max_cost_usd is not None:
+        budget = BudgetGuard(
+            session_factory, materialized.study_id, config.budget.max_cost_usd
+        )
+
+    summary = asyncio.run(
+        run_study(
+            session_factory,
+            study_id=materialized.study_id,
+            scenario_id=materialized.scenario_id,
+            provider=provider,
+            provider_name=provider_name,
+            model=config.runner.model,
+            temperature=config.runner.temperature,
+            max_tokens=config.runner.max_tokens,
+            max_followups=config.runner.max_followups,
+            concurrency=concurrency or config.runner.concurrency,
+            budget=budget,
+        )
+    )
+
+    typer.echo(f"study_id={materialized.study_id}")
+    typer.echo(
+        f"personas={summary.total_personas} "
+        f"already_completed={summary.already_completed} "
+        f"completed_this_run={len(summary.completed)} failed={len(summary.failed)}"
+    )
+    if summary.failed:
+        for outcome in summary.failed:
+            typer.echo(f"  FAILED persona_id={outcome.persona_id}: {outcome.error}")
+
+    if render_report:
+        try:
+            md_path, html_path = _write_report_files(
+                session_factory,
+                study_id=materialized.study_id,
+                out_dir=out_dir,
+                clustering_config=ClusteringConfig(),
+                include_failed=False,
+            )
+        except StudyNotFoundError:  # pragma: no cover - just materialised above
+            typer.echo(f"No study with id={materialized.study_id}", err=True)
+            raise typer.Exit(code=1) from None
+        typer.echo(str(md_path))
+        typer.echo(str(html_path))
+
+
+@app.command()
+def demo() -> None:
+    """Run a small, complete study against FakeProvider (no API key needed)
+    and verify it produced a usable result. PROJECT_SPEC.md §M7's own
+    `.\\make.ps1 demo` target now runs exactly this command -- its exit
+    code carries the verification (`sul.demo.verify_demo`), not a printed
+    message that succeeds regardless of what happened.
+    """
+    try:
+        result = asyncio.run(run_demo())
+    except DemoVerificationError as exc:
+        typer.echo(f"demo verification failed: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    typer.echo(
+        f"study_id={result.study_id} completed_runs={result.completed_run_count} "
+        f"findings={result.finding_count} clusters={result.cluster_count}"
+    )
+    settings = get_settings()
+    typer.echo(
+        f"Run `sul dashboard` and open "
+        f"http://{settings.dashboard_host}:{settings.dashboard_port}/ to view it."
+    )
+
+
+@app.command()
+def dashboard(
+    host: str | None = typer.Option(
+        None, "--host", help="Bind interface (default: SUL_DASHBOARD_HOST / 127.0.0.1)."
+    ),
+    port: int | None = typer.Option(
+        None, "--port", help="Bind port (default: SUL_DASHBOARD_PORT / 8000)."
+    ),
+) -> None:
+    """Serve the read-only dashboard (PROJECT_SPEC.md §M7): study list ->
+    run list -> transcript view -> report view.
+    """
+    settings = get_settings()
+    uvicorn.run(
+        create_app(),
+        host=host or settings.dashboard_host,
+        port=port or settings.dashboard_port,
+    )
 
 
 if __name__ == "__main__":

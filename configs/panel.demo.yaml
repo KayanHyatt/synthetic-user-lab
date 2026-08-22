@@ -1,0 +1,22 @@
+# Small, fixed panel for `sul demo` / `make demo` (PROJECT_SPEC.md §M7). Not
+# an "example" -- `sul demo` actually reads this one, every time, the same
+# way `configs/panel_validity.yaml` is `sul validate`'s own fixed panel
+# rather than an illustrative one. Deliberately small (6 personas) so the
+# demo completes well inside the "60 seconds, no API key" acceptance line
+# (§M7) even under FakeProvider's own per-call latency.
+seed: 7
+size: 6
+segments:
+  - name: time_poor_professional
+    weight: 0.5
+    attributes:
+      tech_comfort:
+        choice: [high, medium]
+      patience: low
+
+  - name: cost_sensitive_student
+    weight: 0.5
+    attributes:
+      tech_comfort:
+        choice: [medium, low]
+      patience: medium

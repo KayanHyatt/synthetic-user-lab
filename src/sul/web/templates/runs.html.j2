@@ -1,0 +1,31 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ study_name }} — runs{% endblock %}
+{% block heading %}{{ study_name }} — runs{% endblock %}
+{% block content %}
+<p><a href="/">&larr; all studies</a> · <a href="/studies/{{ study_id }}/report">report</a></p>
+{% if not runs %}
+<p>No runs recorded for this study.</p>
+{% else %}
+<table>
+<tr><th>Persona</th><th>Segment</th><th>Status</th><th>Turns</th><th>Findings</th><th></th></tr>
+{% for r in runs %}
+<tr>
+<td>{{ r.persona_name }}</td>
+<td>{{ r.segment }}</td>
+<td class="status-{{ r.status.value }}">{{ r.status.value }}</td>
+<td>{{ r.turn_count }}</td>
+<td>{{ r.finding_count }}</td>
+<td>
+<button hx-get="/partials/runs/{{ r.run_id }}/turns" hx-target="#turns-{{ r.run_id }}" hx-swap="innerHTML">
+  expand transcript
+</button>
+<a href="/runs/{{ r.run_id }}">full page</a>
+</td>
+</tr>
+<tr>
+<td colspan="6"><div id="turns-{{ r.run_id }}"></div></td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

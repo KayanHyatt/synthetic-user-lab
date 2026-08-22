@@ -49,7 +49,7 @@ function Check {
 }
 
 function Demo {
-    Write-Host "demo: not implemented yet (lands in M7 - Interface and packaging)." -ForegroundColor Yellow
+    Invoke-Step "sul demo" @("uv", "run", "sul", "demo")
 }
 
 function Validate {

@@ -1,0 +1,28 @@
+{% extends "base.html.j2" %}
+{% block title %}Studies — Synthetic User Lab{% endblock %}
+{% block heading %}Studies{% endblock %}
+{% block content %}
+{% if not studies %}
+<p>No studies yet. Run <code>sul demo</code> (or <code>make demo</code>) to create one.</p>
+{% else %}
+<table>
+<tr><th>Study</th><th>Artefact</th><th>Created</th><th>Runs</th><th></th></tr>
+{% for s in studies %}
+<tr>
+<td>{{ s.name }}</td>
+<td>{{ s.artefact_name }}</td>
+<td>{{ s.created_at.isoformat() }}</td>
+<td>
+{% for status, count in s.run_counts.items() %}
+<span class="status-{{ status.value }}">{{ status.value }}: {{ count }}</span>{% if not loop.last %}, {% endif %}
+{% endfor %}
+</td>
+<td>
+<a href="/studies/{{ s.study_id }}/runs">runs</a> ·
+<a href="/studies/{{ s.study_id }}/report">report</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

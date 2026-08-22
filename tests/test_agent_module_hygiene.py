@@ -20,6 +20,18 @@ convention:
   text, so no single string constant should be long.
 - Every agent entry point's `client`/`provider` parameter has no default
   value -- provider injection, not a module-level fallback.
+
+**PROJECT_SPEC.md §M7 extension.** `sul.web` (the dashboard) is read-only by
+design (§M7: "Read-only is fine" -- this project takes the stronger
+reading). The same AST-level mechanism used above for agent/runner modules
+is extended to `src/sul/web/*.py`: no dashboard module may import
+`sul.runner.orchestrator` (`run_study`), `sul.providers.client`
+(`ModelClient`), or any concrete provider adapter -- there is no code path
+from the dashboard to an LLM dispatch, which is what makes an
+unauthenticated, published port defensible (no spend endpoint exists behind
+it). This is a stronger check than a docstring promise: a future route that
+imports `run_study` "just to show something" fails this test before it ever
+runs.
 """
 
 from __future__ import annotations
@@ -31,12 +43,22 @@ import pytest
 
 AGENTS_DIR = Path(__file__).resolve().parents[1] / "src" / "sul" / "agents"
 RUNNER_DIR = Path(__file__).resolve().parents[1] / "src" / "sul" / "runner"
+WEB_DIR = Path(__file__).resolve().parents[1] / "src" / "sul" / "web"
 
 _AGENT_MODULES = sorted(p for p in AGENTS_DIR.glob("*.py"))
 _RUNNER_MODULES = sorted(p for p in RUNNER_DIR.glob("*.py"))
+_WEB_MODULES = sorted(p for p in WEB_DIR.rglob("*.py"))
 
 _FORBIDDEN_IN_AGENTS = {
     "sul.models",
+    "sul.providers.anthropic",
+    "sul.providers.openai",
+    "sul.providers.gemini",
+    "sul.providers.fake",
+}
+_FORBIDDEN_IN_WEB = {
+    "sul.runner.orchestrator",
+    "sul.providers.client",
     "sul.providers.anthropic",
     "sul.providers.openai",
     "sul.providers.gemini",
@@ -176,3 +198,19 @@ def test_runner_modules_import_no_concrete_adapters(path: Path) -> None:
         and any(m == forbidden or m.startswith(forbidden + ".") for m in imported)
     }
     assert not leaked, f"{path.name} imports concrete adapter(s): {leaked}"
+
+
+@pytest.mark.parametrize("path", _WEB_MODULES, ids=lambda p: p.name)
+def test_web_modules_cannot_dispatch_an_llm_call(path: Path) -> None:
+    """PROJECT_SPEC.md §M7: the dashboard is strictly read-only -- no module
+    under `sul.web` may import `run_study`, `ModelClient`, or any concrete
+    provider adapter (`sul.web`'s own package docstring states this; this is
+    the structural enforcement, not just the promise).
+    """
+    imported = _imported_module_names(_parse(path))
+    leaked = {
+        forbidden
+        for forbidden in _FORBIDDEN_IN_WEB
+        if any(m == forbidden or m.startswith(forbidden + ".") for m in imported)
+    }
+    assert not leaked, f"{path.name} imports forbidden module(s): {leaked}"
