@@ -1,0 +1,29 @@
+# PROJECT_SPEC.md §M7 packaging acceptance chain: `docker compose up` ->
+# `.\make.ps1 demo` (on the HOST, not `docker compose exec` -- the
+# acceptance chain names `docker compose up` before `make demo`, implying
+# the container is already up and watching a database the host process
+# writes into) -> reload the dashboard at http://127.0.0.1:8000/.
+#
+# The repo root is bind-mounted read-only at /repo so the dashboard can see
+# whatever `sul.db` the host's `.\make.ps1 demo` produces -- a fresh clone
+# has no `sul.db` yet (gitignored), so a single-file bind mount would have
+# Docker silently create a *directory* by that name; mounting the
+# directory that will eventually contain it is what makes "fresh clone ->
+# docker compose up, database appears later" work at all.
+#
+# Read-only means the reviewer's own .env (if any) is visible inside the
+# container at /repo/.env -- never in any image layer, and never read
+# (pydantic-settings loads .env relative to the process's CWD, which is
+# /app, not /repo) -- documented as a deviation rather than masked.
+
+services:
+  dashboard:
+    build:
+      context: .
+    image: sul:m7
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./:/repo:ro
+    environment:
+      SUL_DATABASE_URL: sqlite:////repo/sul.db

@@ -278,3 +278,37 @@ def test_docs_limitations_no_longer_points_at_a_missing_readme() -> None:
 def test_readme_carries_the_standing_caveat_verbatim() -> None:
     text = README.read_bytes().decode("utf-8")
     assert SIMULATED_PANEL_CAVEAT in text
+
+
+# --------------------------------------------------------------------------
+# 5. Docker packaging claim (PROJECT_SPEC.md §M7 packaging, closed this
+#    session) -- the exact failure class this whole file exists for: a
+#    claim true when written, false later, with no existence or link check
+#    able to catch the drift on its own. `Dockerfile`/`docker-compose.yml`
+#    either exist or don't; the README's prose about them must agree with
+#    whichever is true *right now*, in both directions -- this cannot
+#    prevent every future case of this class (see the module docstring's
+#    own limits), but it collapses this one specific claim onto a
+#    filesystem fact a test can actually check.
+# --------------------------------------------------------------------------
+
+DOCKERFILE = REPO_ROOT / "Dockerfile"
+COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
+
+
+def test_readme_docker_claim_agrees_with_whether_the_files_exist() -> None:
+    text = README.read_text(encoding="utf-8")
+    packaging_files_exist = DOCKERFILE.exists() and COMPOSE_FILE.exists()
+    no_docker_claim_present = "no Docker workflow in this tree" in text
+
+    if packaging_files_exist:
+        assert not no_docker_claim_present, (
+            "Dockerfile and docker-compose.yml both exist, but README.md "
+            "still claims there is no Docker workflow in this tree"
+        )
+    else:
+        assert no_docker_claim_present, (
+            "Dockerfile/docker-compose.yml are missing, but README.md no "
+            "longer says so -- the packaging criterion would be silently "
+            "unstated rather than recorded as unmet"
+        )

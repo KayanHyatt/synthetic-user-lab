@@ -1,0 +1,32 @@
+# PROJECT_SPEC.md §M7 packaging. Deny-by-default: exclude everything, then
+# re-include only what the image build actually needs. A deny-by-default
+# list can't have a "looks like it excludes a secret but doesn't match"
+# entry for a file that doesn't exist yet -- the failure mode a blacklist
+# invites -- because anything not explicitly re-included stays excluded
+# regardless of what gets added to the repo later.
+#
+# tests/cassettes/ is deliberately NOT re-included: the image ships no
+# cassettes, so `sul validate` in-container would silently fall back to
+# FakeProvider (sul.cli._select_validate_provider) rather than replaying
+# Config A. The container's job is the dashboard + `sul demo`, not
+# `sul validate` -- see PROJECT_SPEC.md §M7's packaging note.
+*
+
+!src/
+!src/**
+!configs/
+!configs/**
+!artefacts/
+!artefacts/**
+!pyproject.toml
+!uv.lock
+
+# Bytecode caches accumulate under src/ from local `pytest`/`mypy` runs and
+# would otherwise ride along with the broad !src/** re-inclusion above --
+# re-excluded here, after it, since Docker's own last-match-wins rule means
+# order matters. Confirmed via a real `docker build` (COPY . /ctx) that
+# these actually reach the build context without this: PROJECT_SPEC.md §M7's
+# packaging deviation records the before/after file list.
+**/__pycache__/
+**/__pycache__/**
+**/*.pyc

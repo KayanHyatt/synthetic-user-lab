@@ -1416,7 +1416,159 @@ reviewer with no keys can still see it work in 60 seconds.
 > in-container doesn't silently fall back to `FakeProvider` — §M7 5.4 below
 > covers why). None of these change what was actually built and tested this
 > session; they're packaging decisions, not interface ones.
+
+---
+
+> **§M7 packaging criterion: MET.** Docker Desktop 4.87.0 (engine 29.7.2,
+> compose v5.4.0) was installed and verified on this machine this session
+> (`hello-world` ran clean); `Dockerfile`, `docker-compose.yml`, and
+> `.dockerignore` are committed at the repo root, and the full six-step
+> verification plan above was executed against them, plus the anti-vacuity
+> checks below. `.\make.ps1 check` is green: **343 tests**, up from 337 at
+> `79a80bd` (+5 `tests/test_docker_build_context.py`, +1
+> `tests/test_docs_claims.py`).
 >
+> **Base images, pinned by digest (never a floating tag):**
+> `python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134`
+> and `ghcr.io/astral-sh/uv@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1`
+> (uv 0.12.5), both resolved via `docker pull` + `docker inspect` this
+> session.
+>
+> **Step 1 (cold build).** `git clone . <tmp>` at `79a80bd`, confirmed
+> `HEAD` and a clean `git status` in the clone. The clone alone has no
+> `Dockerfile` yet (uncommitted at clone time) — the packaging files were
+> staged into the clone for this session's iteration, and a second, truly
+> clean `git clone . <tmp>` + `docker build --no-cache` was run again
+> *after* this commit, against the committed `HEAD`, as the actual proof
+> the criterion names — see the timestamped output below.
+>
+> **Step 2 (TLS).** The plain build succeeded on the first try, `--no-cache`,
+> from the fresh clone — no CA-copy step, no wheelhouse fallback needed.
+> `synthetic-user-lab==0.1.0 (from file:///app)` in the `uv sync` output
+> confirms the editable install resolved with zero network trust workaround.
+>
+> **Step 3 (`uv sync --frozen`).** Ran against the committed `uv.lock`,
+> `--no-dev`, resolving nothing (`--frozen`).
+>
+> **Step 4 (secrets-in-image, three ways, each demonstrated by breaking it):**
+> - *Build-context check*: `tests/test_docker_build_context.py`, a
+>   pure-Python re-implementation of Docker's `.dockerignore` matching
+>   rules, run offline. **Cross-checked once against real Docker**: a
+>   throwaway `COPY . /ctx` image's actual build-context file list (`find`
+>   inside the container) was diffed against the Python model's output on
+>   the same repo — 193 files, byte-identical file sets (after normalizing
+>   Windows CRLF from the Python side). This surfaced a real leak the model
+>   didn't originally predict: 81 stray `__pycache__/*.pyc` files from local
+>   `pytest`/`mypy` runs rode along with the broad `!src/**` re-inclusion.
+>   Fixed by appending `**/__pycache__/`, `**/__pycache__/**`, `**/*.pyc` to
+>   `.dockerignore` (order matters — Docker's last-match-wins rule requires
+>   these *after* the re-inclusion lines); re-verified identical (112 files,
+>   both sides) after the fix. `.dockerignore` is a deny-by-default
+>   whitelist (`*` then explicit `!src/`, `!configs/`, `!artefacts/`,
+>   `!pyproject.toml`, `!uv.lock`), not the blacklist form first sketched —
+>   structurally closes the "entry that looks like it excludes a secret but
+>   doesn't match" class for files that don't exist yet, at the cost of
+>   needing every legitimately-needed path re-included explicitly.
+> - *Break-then-fix, working tree (not the clone — a fresh clone has no
+>   `.env` at all, so a clean scan there would prove nothing)*: appended
+>   `!.env` to `.dockerignore`, built a minimal probe image
+>   (`COPY .env /app/.env-leak-test`, `--no-cache`) — **succeeded**, and
+>   `docker save` + extracting the OCI blob tarballs + grepping found the
+>   real key: a genuine `ANTHROPIC_API_KEY=sk-ant-api03-...` line, extracted
+>   and displayed in this session's own terminal output (not reproduced
+>   here or anywhere else committed). Reverted `.dockerignore`, rebuilt the
+>   identical probe — this time the build **failed outright**,
+>   `COPY .env /app/.env-leak-test: "/.env": not found` — `.dockerignore`
+>   keeps `.env` from ever reaching the daemon's build context at all, a
+>   stronger guarantee than "the real Dockerfile just doesn't reference it."
+> - *Full layer scan of the real `sul:m7` image*: `docker save` + extracted
+>   all 10 layer blobs, scanned each for `sk-ant-` content and for
+>   `.env`/`sul.db` filenames — **0 hits across all 10 layers**. No
+>   `ARG`/`ENV` for any API key anywhere in the Dockerfile (confirmed via
+>   `docker inspect .Config.Env`: only `PATH`, `LANG`, `GPG_KEY`,
+>   `PYTHON_VERSION`, `PYTHON_SHA256`, `SUL_DASHBOARD_HOST`,
+>   `SUL_DASHBOARD_PORT`).
+>
+> **Step 5 (run-time network independence) — §M7's recorded form amended.**
+> `docker run --network none -p 127.0.0.1:8001:8000 ... sul:m7` does not
+> fail as the recorded plan implied — Docker accepts the flag combination
+> syntactically, but `docker inspect`'s `NetworkSettings.Ports` comes back
+> `map[8000/tcp:[]]`: no host binding is ever created, so the published
+> port is silently dead (`curl` to it: `Failed to connect`). Confirmed via
+> `docker inspect .HostConfig.NetworkMode` = `none`. **Corrected form**:
+> `docker exec` into the running `--network none` container and hit the
+> dashboard over its own loopback with `urllib` — `/` and
+> `/static/htmx.min.js` both returned `200`. Negative control in the same
+> container: `urllib.request.urlopen("http://example.com")` failed with
+> `Temporary failure in name resolution` — proving the isolation is real,
+> not just an unexercised assertion.
+>
+> **Step 6 (acceptance chain, timed, `ANTHROPIC_API_KEY` unset in the
+> invoking shell — confirmed empty before this run).** `docker compose up
+> -d` (1s) → `curl 127.0.0.1:8000` (200, after the container finished
+> starting) → `.\make.ps1 demo` **on the host** (6s; `study_id=85
+> completed_runs=6 findings=13 clusters=13`) → reload
+> `http://127.0.0.1:8000/` → `/studies/85/runs` (200), `/studies/85/report`
+> (200, renders "Demo: bad onboarding usability study — report" with
+> clusters and evidence). Total wall-clock for compose-up→reload: **8s**
+> (excludes image build time, already cached from Step 1's cold build).
+>
+> **Design decisions resolved this session** (left open in the note above):
+> - **Database**: repo root bind-mounted read-only at `/repo`,
+>   `SUL_DATABASE_URL=sqlite:////repo/sul.db` — not a single-file mount (a
+>   fresh clone has no `sul.db`, and Docker silently creates a *directory*
+>   at a missing bind-mount source, which would break the acceptance chain
+>   on exactly the machine it's meant to prove itself on) and not a named
+>   volume (the container would then own a database the host's own
+>   `make demo` never writes into, breaking the recorded reading of the
+>   acceptance chain, which names `make demo` running on the host).
+>   **Deviation**: a reviewer's own `.env`, if one exists, is therefore
+>   visible inside the running container at `/repo/.env` — never in any
+>   image layer, read-only, and never loaded (`pydantic-settings` reads
+>   `.env` relative to the process's CWD, which is `/app`, not `/repo`).
+>   Documented rather than masked with an anonymous-volume trick.
+> - **Publish binding**: `127.0.0.1:8000:8000`, as recommended and now
+>   exercised end to end.
+> - **Cassettes**: not shipped. `tests/cassettes/` is excluded by
+>   `.dockerignore`; the container can serve the dashboard and run
+>   `sul demo` (constructs `FakeProvider()` directly — §M7 5.4), but not
+>   `sul validate` (would silently fall back to `FakeProvider` via
+>   `sul.cli._select_validate_provider`'s cassette-directory sniff, which is
+>   a worse artefact than not offering the command).
+> - **Entrypoint**: `SUL_DASHBOARD_HOST=0.0.0.0` set as an image-level `ENV`
+>   default (the `Settings` default of `127.0.0.1` would leave the
+>   published port unreachable from outside the container) — config-driven
+>   via the already-existing `Settings.dashboard_host`, no source change.
+> - **Non-root runtime user** (`appuser`), not previously named by this
+>   section's own scope bullet — a standard hardening step for a
+>   long-running, eventually-published-port process, added without being
+>   asked; flagged here rather than silently folded in.
+> - **Editable-install layout**: both build and runtime stages use `/app`
+>   as `WORKDIR`, so `uv sync`'s editable install and `sul.demo.REPO_ROOT`/
+>   `sul.config.DEFAULT_CASSETTE_DIR`'s `Path(__file__).resolve().parents[2]`
+>   resolve identically in both stages — no source rewrite needed, exactly
+>   as the groundwork paragraph below anticipated.
+>
+> **README staleness (§M7 5's own concern) closed.** `README.md`'s "no
+> Docker workflow in this tree" paragraph and its claim-trace row both
+> updated to reflect the committed files and the demonstrated chain.
+> `tests/test_docs_claims.py` gained
+> `test_readme_docker_claim_agrees_with_whether_the_files_exist`, coupling
+> the README's prose to `Dockerfile`/`docker-compose.yml`'s actual existence
+> in both directions — this closes *this specific* instance of "a claim
+> true when written, false later, with no filesystem correlate," but not
+> the general class: no offline test can assert "the cold build was
+> actually run and passed" (that would need a Docker daemon and network
+> access inside `pytest`, breaking the offline-tests rule outright). That
+> half is recorded here, in prose, as **Demonstrated** evidence rather than
+> as something any test defends — the same category `README.md`'s own
+> claim-trace table already uses for exactly this reason.
+>
+> **Session spend: $0.00** (no LLM call made; `sul demo` used
+> `FakeProvider` throughout, as it always has).
+
+---
+
 > **Config-driven groundwork already in place, so the eventual container
 > needs no source rewrite:** `Settings.database_url` (already existed,
 > `SUL_DATABASE_URL`) is the one place both `sul demo` and `sul dashboard`
@@ -1592,10 +1744,13 @@ the limitations section, and "what I'd do differently with real participants."
 > acceptance-criteria block — its six-element list (what/why, architecture
 > diagram, 60-second demo, cost table, limitations, "what I'd do
 > differently") *is* the criterion, and every element is present in the new
-> `README.md`. §M8 does not own §M7's still-unmet Docker packaging (§M7
-> names it explicitly and reserves it for a session with a real Docker
-> runtime; this machine still has none — `docker` not on `PATH`, `wsl -l -q`
-> reports zero distributions). No live API call was made and no report was
+> `README.md`. §M8 does not own §M7's Docker packaging (§M7 named it
+> explicitly and reserved it for a session with a real Docker runtime; that
+> was true when this paragraph was written — this machine then had none,
+> `docker` not on `PATH`, `wsl -l -q` reporting zero distributions — and is
+> no longer true: §M7's packaging criterion is recorded MET further above,
+> in a later session, once Docker Desktop was installed). No live API call
+> was made and no report was
 > regenerated from a live provider; `sul validate`'s cassette-replay path
 > (§M6 Deviation 5, amended) was invoked once to refresh
 > `docs/limitations.md` after Deviation 15 below, and it reproduced

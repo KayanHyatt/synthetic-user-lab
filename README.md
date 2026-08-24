@@ -104,11 +104,18 @@ report view. Every page — including every HTMX partial — carries the
 standing caveat in the section below, and no swap this app declares can hide
 it (`tests/test_web_caveat.py`).
 
-There is **no Docker workflow in this tree.** §M7's packaging criterion
-(`docker compose up` → `make demo`) is recorded UNMET in `PROJECT_SPEC.md`:
-this machine has no Docker runtime (`docker` not on `PATH`, `wsl -l -q`
-reports zero distributions, Windows 11 Home). Nothing below documents a
-container that does not exist.
+**Docker workflow:** `docker compose up -d` builds and starts the read-only
+dashboard, bind-mounting the repo root read-only so it can see whatever
+`sul.db` the host produces; `.\make.ps1 demo` then runs on the **host**, not
+inside the container (§M7's acceptance chain names `docker compose up`
+*before* `make demo` on purpose). Reload `http://127.0.0.1:8000/` and the
+study just materialised shows up, no API key set anywhere. The image ships no
+`tests/cassettes/`, so it cannot run `sul validate` in-container — that would
+silently fall back to `FakeProvider` rather than replay Config A
+(`sul.cli._select_validate_provider`); the container's job is the dashboard
+plus `sul demo`, both of which need no cassette. `Dockerfile`,
+`docker-compose.yml`, and `.dockerignore` are all committed at the repo root;
+`PROJECT_SPEC.md` §M7 records what proved this and its deviations.
 
 ## What this simulated panel is, on every page
 
@@ -193,6 +200,6 @@ or **Unverified** (stated as such, never silently implied).
 | No test hits a real LLM API | Structural | session-scoped socket guard, `tests/conftest.py` |
 | 40-persona study cost | Unverified (extrapolation) | scaled ×8 from the measured 5-persona table above |
 | `openai`/`gemini` cost tiers | Unverified (no rate card) | `configs/pricing.yaml` — sections deliberately empty |
-| §M7 Docker packaging | Unverified — does not exist | `PROJECT_SPEC.md` §M7 note, recorded UNMET |
+| §M7 Docker packaging (`docker compose up` → `make demo` → dashboard, no API key) | Demonstrated | `PROJECT_SPEC.md` §M7 note, recorded MET; `Dockerfile`, `docker-compose.yml`, `.dockerignore` |
 | 60-second demo runs offline, no API key | Demonstrated | `.\make.ps1 install && .\make.ps1 demo && .\make.ps1 validate` |
 | Full test suite runs offline, zero spend | Demonstrated | `.\make.ps1 test` |
