@@ -1585,6 +1585,66 @@ reviewer with no keys can still see it work in 60 seconds.
 instructions, a cost table (what a 40-persona study actually costs per provider),
 the limitations section, and "what I'd do differently with real participants."
 
+> **M8 complete. Deviations recorded below; none narrow this section's own
+> six-element list, and none touch §M7's own unmet packaging criterion.**
+>
+> **Deviation 14 (§M8 scope).** §M8, unlike M0–M7, carries no numbered
+> acceptance-criteria block — its six-element list (what/why, architecture
+> diagram, 60-second demo, cost table, limitations, "what I'd do
+> differently") *is* the criterion, and every element is present in the new
+> `README.md`. §M8 does not own §M7's still-unmet Docker packaging (§M7
+> names it explicitly and reserves it for a session with a real Docker
+> runtime; this machine still has none — `docker` not on `PATH`, `wsl -l -q`
+> reports zero distributions). No live API call was made and no report was
+> regenerated from a live provider; `sul validate`'s cassette-replay path
+> (§M6 Deviation 5, amended) was invoked once to refresh
+> `docs/limitations.md` after Deviation 15 below, and it reproduced
+> `docs/validity_report.md` byte-for-byte, as
+> `tests/test_validity_cassette_report_determinism.py` already guarantees.
+> Session spend: $0.00.
+>
+> **Deviation 15 (touches M6's surface).**
+> `src/sul/validity/templates/limitations.md.j2` — and only the template,
+> never the generated `docs/limitations.md` directly — gained a new section
+> reporting the four provider-gated checks' own numbers (discriminative
+> validity, acquiescence bias, position bias, known-answer calibration) with
+> their denominators, whenever a real or cassette-backed provider actually
+> measured them. Before this, `docs/limitations.md` carried reproducibility
+> and the three offline-measurable clustering weaknesses only — the
+> acquiescence-bias result (gap 1.0 over 5/5 subjects, this project's most
+> serious measured limitation) existed solely in `docs/validity_report.md`,
+> one file away from the one a reader opens expecting limitations. This is a
+> burial fix, not a new measurement: the module's own `render_limitations_
+> markdown` docstring is unchanged in intent — these four checks still do
+> not count toward the file's own "at least two concrete, measured
+> weaknesses" acceptance criterion (`tests/test_validity_rendering.py::
+> test_limitations_md_states_at_least_two_measured_weaknesses` still passes,
+> unmodified) — they are now simply not hidden when they exist.
+> `docs/limitations.md` was regenerated from this template via the real
+> `sul validate` CLI path (cassette-backed, offline, `record=False`); the
+> resulting diff is additive only (30 inserted lines, 0 removed), and
+> `docs/validity_report.md` did not change at all.
+>
+> **Deviation 16 (§7, not §M8's own list).** §7's CV bullets ("fill the
+> brackets from real output — don't estimate") were filled from this
+> session's real output: suite time (325 tests, ~83s), known-defect
+> detection rate (1/3, kept as a fraction rather than a lossy percentage),
+> and the resumable-orchestration bullet (20, §M4's own literal acceptance
+> criterion). `[40]` was deliberately **not** filled — no 40-persona study
+> has ever been run (largest recorded: 5 personas), and §7's own instruction
+> forbids estimating it. This sits outside §M8's six-element list; recorded
+> here because the instruction was project-level and its brackets were
+> genuinely fillable (or, for `[40]`, genuinely and explicitly not).
+>
+> **Cost-table honesty note (not a deviation, a fact folded into the
+> README itself):** `sul.db` records three validity-harness passes at
+> **$0.112556 each, identical to six decimal places** — three live passes
+> cannot agree to six decimals, so two of the three are cassette replays
+> whose `ModelCall` rows carry a real dollar cost despite spending nothing.
+> The README's cost table cites the single 5-persona measured basis
+> ($0.052706, study 47) rather than `sul.db`'s summed total, to avoid
+> repeating that inflation into a portfolio-facing number.
+
 ---
 
 ## 5. Guardrails — do not do these
@@ -1616,15 +1676,23 @@ Build so these have real answers:
 
 Fill the brackets from real output — don't estimate.
 
-- Built a multi-agent research harness that runs panels of [40] LLM-simulated
-  users against product artefacts, with role-isolated moderator/persona/analyst
-  agents to prevent hypothesis leakage into responses.
+> **M8 note:** filled below from real output where real output exists.
+> `[40]` is explicitly **not** filled — no 40-persona study has ever been run
+> (largest recorded: 5 personas, PROJECT_SPEC.md §M8's own cost table). The
+> literal instruction ("don't estimate") makes `[40]` unfillable without
+> running one; recorded here as a deviation rather than silently estimated.
+
+- Built a multi-agent research harness that runs panels of [never run at 40 —
+  largest recorded study: 5] LLM-simulated users against product artefacts,
+  with role-isolated moderator/persona/analyst agents to prevent hypothesis
+  leakage into responses.
 - Designed a provider-agnostic LLM layer with record/replay cassettes, per-call
-  cost accounting and budget kill-switches; full test suite runs offline in [X]s
-  with zero API spend.
+  cost accounting and budget kill-switches; full test suite runs offline in
+  [~83]s (325 tests, `.\make.ps1 test`) with zero API spend.
 - Built a validity harness measuring reproducibility, discriminative validity,
-  acquiescence bias and known-defect detection rate ([X]%), and documented the
+  acquiescence bias and known-defect detection rate ([1/3]), and documented the
   conditions under which synthetic panels are and are not informative.
 - Implemented resumable async orchestration with concurrency limits and
-  exponential backoff, recovering [N]-run studies from mid-flight interruption
-  without duplicate work.
+  exponential backoff, recovering [20]-run studies from mid-flight interruption
+  without duplicate work (§M4's own literal acceptance criterion:
+  `tests/test_m4_acceptance.py::test_kill_at_50_percent_and_resume_completes_without_duplicate_runs`).

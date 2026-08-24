@@ -30,23 +30,63 @@ At `distance_threshold={{ report.threshold_scaling.distance_threshold }}` (the s
 {% endfor %}
 
 This threshold was calibrated against a seven-document fixture (§M5); this table is the first measurement of its behaviour at larger, more realistic finding counts. The default is unchanged here -- `distance_threshold` and `sklearn.__version__` are embedded in every report's provenance, and changing the default would break comparability with every report already produced.
-{% if report.discriminative_validity.status == NOT_MEASURED_OFFLINE
-    or report.acquiescence_bias.status == NOT_MEASURED_OFFLINE
-    or report.position_bias.status == NOT_MEASURED_OFFLINE
-    or report.known_answer_calibration.status == NOT_MEASURED_OFFLINE %}
 
-## Not a measured weakness of the panel: four of five §M6 checks need a real provider
+## The four provider-gated checks, in full when a real provider measured them
 
-Discriminative validity, acquiescence bias, position bias, and known-answer calibration all depend on the panel's output actually reflecting the artefact, the question framing, or the option position it was given. `{{ report.provider_name }}` synthesizes structured output (category, summary, agreement, choice) uniformly at random from the full prompt hash, blind to all three -- so none of these four checks produced a real number in this run. This is stated here for completeness. It is a limitation of *running this harness offline*, not a measured property of the synthetic panel, and is not counted toward the two measured weaknesses above.
+Discriminative validity, acquiescence bias, position bias, and known-answer calibration all depend on the panel's output actually reflecting the artefact, the question framing, or the option position it was given -- so none of them is offline-measurable by construction, and each is not counted toward the two measured weaknesses above. That is a statement about *what this file's own acceptance criterion counts*, not a reason to leave the numbers out of this file when they exist: relegating a check as serious as acquiescence bias to `docs/validity_report.md` alone, while this file's own opening line reads as a finished account of the panel's limits, is the same overclaim as not measuring it at all. Whenever `sul validate` had a real (or cassette-backed) provider available for a check below, its numbers -- with their denominators -- are printed here directly.
+
+### Discriminative validity
+
+{% if report.discriminative_validity.status == MEASURED %}
+- Bad artefact blocker/confusion count: {{ report.discriminative_validity.bad_blocker_confusion_count }}
+- Good artefact blocker/confusion count: {{ report.discriminative_validity.good_blocker_confusion_count }}
+- Material difference: {{ report.discriminative_validity.material_difference }}
+{% elif report.discriminative_validity.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** ({{ report.discriminative_validity.provenance|length }} provenance rows) -- {{ report.discriminative_validity.reason }}
+{% else %}
+**NOT MEASURED OFFLINE** -- {{ report.discriminative_validity.reason }}
 {% endif %}
-{% if report.discriminative_validity.status == PARTIALLY_MEASURED
-    or report.acquiescence_bias.status == PARTIALLY_MEASURED
-    or report.position_bias.status == PARTIALLY_MEASURED
-    or report.known_answer_calibration.status == PARTIALLY_MEASURED %}
 
-## Partially measured: one or more §M6 checks lost subjects mid-run
+### Acquiescence bias
 
-At least one of discriminative validity, acquiescence bias, position bias, or known-answer calibration finished with fewer subjects than it started with -- see the **Provenance**/subject-count fields in `docs/validity_report.md` for which check and how many. Every number reported for a partially-measured section is computed only over the subjects that completed every probe call for it; it is not padded, extrapolated, or presented as full-panel coverage. This is stated here for completeness, same as the not-measured-offline note above, and is not counted toward the two measured weaknesses above -- it is a property of this run's reliability, not a measured property of the synthetic panel.
+{% if report.acquiescence_bias.status == MEASURED or report.acquiescence_bias.status == PARTIALLY_MEASURED %}
+{% if report.acquiescence_bias.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** ({{ report.acquiescence_bias.subjects_measured }}/{{ report.acquiescence_bias.subjects_attempted }} subjects completed both framings) -- {{ report.acquiescence_bias.reason }}
+
+{% endif %}
+- Positively framed question: {{ report.acquiescence_bias.positively_framed_question }}
+- Negatively framed question: {{ report.acquiescence_bias.negatively_framed_question }}
+- Positive-framing agree rate: {{ report.acquiescence_bias.positive_agree_rate }}
+- Negative-framing agree rate: {{ report.acquiescence_bias.negative_agree_rate }}
+- Agreement gap: {{ report.acquiescence_bias.agreement_gap }} ({{ report.acquiescence_bias.subjects_measured }}/{{ report.acquiescence_bias.subjects_attempted }} subjects) -- the panel agreed with whichever framing it was given, at this gap, over this denominator
+{% else %}
+**NOT MEASURED OFFLINE** -- {{ report.acquiescence_bias.reason }}
+{% endif %}
+
+### Position bias
+
+{% if report.position_bias.status == MEASURED or report.position_bias.status == PARTIALLY_MEASURED %}
+{% if report.position_bias.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** ({{ report.position_bias.subjects_measured }}/{{ report.position_bias.subjects_attempted }} subjects completed both orderings) -- {{ report.position_bias.reason }}
+
+{% endif %}
+- Options: {{ report.position_bias.options }}
+- First-position share (original order): {{ report.position_bias.first_position_share_original_order }}
+- First-position share (reversed order): {{ report.position_bias.first_position_share_reversed_order }}
+- Preference shift: {{ report.position_bias.preference_shift }} ({{ report.position_bias.subjects_measured }}/{{ report.position_bias.subjects_attempted }} subjects)
+{% else %}
+**NOT MEASURED OFFLINE** -- {{ report.position_bias.reason }}
+{% endif %}
+
+### Known-answer calibration
+
+{% if report.known_answer_calibration.status == MEASURED %}
+- Detected: {{ report.known_answer_calibration.detected_count }} / {{ report.known_answer_calibration.total_defects }}
+- Detection rate: {{ report.known_answer_calibration.detection_rate }}
+{% elif report.known_answer_calibration.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** -- {{ report.known_answer_calibration.reason }}
+{% else %}
+**NOT MEASURED OFFLINE** -- {{ report.known_answer_calibration.reason }}
 {% endif %}
 {% if report.provider_name != "fake" %}
 
