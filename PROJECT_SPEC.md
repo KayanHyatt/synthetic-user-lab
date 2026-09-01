@@ -1404,6 +1404,75 @@ states at least two concrete, measured weaknesses.
 > panel, 5 personas, one seed, one artefact pair, this Haiku Analyst on
 > this transcript — never phrased as a general property of either model.
 >
+> **Deviation 21 (a later session): the README paragraph the Deviation 20
+> prose landed 170 lines below was never updated, and shipped self-
+> contradictory in the same commit (`95551f0`) — fixed, and the docs-claim
+> test that should have caught it fixed too.** `README.md`'s "Measured
+> limits" section still read "there is no A/B Analyst comparison, and a
+> second configuration ('Config B') was never recorded" — true when
+> originally written, false since `3006b9f`, and directly contradicted by
+> the Claim-trace row the same commit added further down. Rewritten to
+> say what is now true without restating the Claim-trace row's own
+> numbers: Config B was recorded and compared on discriminative validity
+> specifically, the comparison is scoped to one panel/one seed/one
+> artefact pair, and it doesn't extend to the other three checks or to
+> cheaper/different model combinations generally — narrower than both the
+> old denial and a blanket claim of validation, since Config B held the
+> aggregate and lost the `blocker` label (see Deviation 20).
+>
+> **`tests/test_docs_claims.py::test_readme_config_b_claim_agrees_with
+> _whether_the_cassettes_exist`, modelled on the Docker packaging check —
+> and the seventh instance of this project's own recurring failure mode:
+> a test that passes on its first run, for the wrong reason, because
+> nobody insisted on seeing it fail first.** Detects Config B by parsing
+> each cassette's request body for `model: claude-haiku-4-5` combined with
+> `_RunAnalystFinding` (the Analyst structured-output schema's own marker,
+> distinctive to that one call site — verified against exactly the known
+> 10 Config B files and none of the other 46), not a raw file count,
+> which would pass for an unrelated reason if the directory ever grew
+> again. Written against the *unmodified*, still-stale README as
+> instructed, it **passed** — the wrong result, silently: its exact
+> multi-line substring match spanned a markdown line-wrap in the actual
+> README source (the claim's own sentence wraps mid-phrase) and matched
+> neither branch, so `never_recorded_claim_present` came back `False` and
+> the assertion happened to hold by accident. Caught only because the red
+> run was insisted on rather than assumed; fixed by whitespace-normalising
+> the README text before the substring check, the same technique this
+> file's own `test_every_backtick_path_named_in_the_readme_exists`
+> tolerates line-wrapped `` `paths` `` with. Re-run against the same
+> unmodified README: genuinely red (`assert not True`). Green only after
+> the README paragraph above was actually rewritten.
+>
+> **One clause on the `limitations.md.j2` "do not transfer down a model
+> tier" paragraph, backed by a new test rather than left as prose derived
+> from deleted scratch diagnostics.** The bad-artefact and good-artefact
+> comparisons (this deviation and Deviation 20) tell one story: the
+> difference between the two Analysts on this transcript is categorical,
+> not about severity. Both configs' two severity-4 findings on the bad
+> artefact are identical in *count* but not in *category* — Config A:
+> `{blocker, missing_info}`; Config B: `{confusion, missing_info}`, zero
+> `blocker` at any severity — and the middle mass shifts down (mode
+> severity 3 → 2: Config A `{2: 1, 3: 5, 4: 2}`, Config B
+> `{1: 1, 2: 4, 4: 2}`). On the clean artefact both Analysts report
+> `delight` exclusively (100% either config — the 0 blocker/confusion
+> figure is well-supported, not a silent-Analyst artefact), but Config A's
+> Sonnet Analyst reported *something* for only 2 of 5 personas where
+> Config B's Haiku Analyst reported for all 5 — so Sonnet's bad-vs-good
+> swing (8 findings → 2) is volume and category together, Haiku's
+> (7 → 5) is almost purely category, because it says something about the
+> artefact regardless of whether it's good or bad. None of this was
+> previously asserted anywhere a future regeneration could check —
+> `tests/test_validity_config_ab_severity.py` (new) calls
+> `run_discriminative_validity` directly against the real cassettes for
+> both configs and asserts the severity distributions, the sev-4 category
+> sets, and the good-artefact persona-coverage counts above; single-process,
+> not cross-process, since none of `Finding.severity`/`.category` counting
+> touches `sul.analysis.clustering`'s own order-sensitive path (that risk
+> is specific to cluster *labels*, which discriminative validity's
+> aggregate counts never compute). `.\make.ps1 validate` re-run after the
+> template edit: `docs/validity_report.md` unchanged (confirmed by empty
+> diff), `docs/limitations.md` carries the new clause.
+>
 > **Amended the same session: Deviation 12's "left open" call turned out to
 > be wrong on reflection — see Deviation 13.** Committing 46 cassettes whose
 > own real numbers `docs/limitations.md` now describes, while `make

@@ -20,9 +20,12 @@ These numbers come from `docs/validity_report.md`, produced by `sul validate`
 against a cassette-backed recording of `anthropic/claude-sonnet-5` (Analyst)
 and `anthropic/claude-haiku-4-5` (persona, moderator, probes) — call it
 **Config A**. **Four of the five checks below come from that one
-configuration; there is no A/B Analyst comparison, and a second configuration
-("Config B") was never recorded.** Nothing here validates a cheaper or
-different model combination.
+configuration.** A second configuration — Haiku as the Analyst too ("Config
+B") — was recorded and compared against discriminative validity specifically:
+see the Claim-trace row below for what held and what changed. That comparison
+covers one panel, one seed, one artefact pair, and doesn't extend past
+discriminative validity to the other three checks, or past this one Analyst
+swap to cheaper or different model combinations generally.
 
 | Check | Result | Denominator |
 |---|---|---|

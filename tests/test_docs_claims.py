@@ -26,6 +26,7 @@ criteria, unlike M0-M7:
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -311,4 +312,62 @@ def test_readme_docker_claim_agrees_with_whether_the_files_exist() -> None:
             "Dockerfile/docker-compose.yml are missing, but README.md no "
             "longer says so -- the packaging criterion would be silently "
             "unstated rather than recorded as unmet"
+        )
+
+
+# --------------------------------------------------------------------------
+# 6. Config B claim (PROJECT_SPEC.md §M6 Deviation 18) -- the same failure
+#    class as check 5, one milestone later: README.md shipped a "Config B
+#    was never recorded" sentence in the same commit (95551f0) that added a
+#    Claim-trace row citing Config B's own measured numbers, 170 lines
+#    further down. `Dockerfile`/`docker-compose.yml` either exist or don't;
+#    a Haiku-Analyst cassette either is or isn't in `tests/cassettes/` --
+#    this collapses that specific claim onto the same kind of filesystem
+#    fact, in both directions, so it can't drift silently again.
+# --------------------------------------------------------------------------
+
+
+def _config_b_cassette_exists() -> bool:
+    """A cassette whose request body dispatches the Analyst
+    (`_RunAnalystFinding` in the JSON schema -- the structured-output model
+    `sul.agents.analyst.run_analyst` builds, distinctive to that one call
+    site) at `claude-haiku-4-5` -- Config A's Analyst is always Sonnet
+    (PROJECT_SPEC.md §M6 Deviation 12/13), so this combination only ever
+    appears in a Config B recording (Deviation 18). Checked by parsing each
+    cassette's own request body, not a raw file count -- a count would
+    still pass if `tests/cassettes/` grew for an unrelated reason.
+    """
+    if not CASSETTE_DIR.exists():
+        return False
+    for path in CASSETTE_DIR.glob("*.json"):
+        cassette = json.loads(path.read_text(encoding="utf-8"))
+        body_text = cassette["request"]["body"]
+        if '"model":"claude-haiku-4-5"' not in body_text.replace(" ", ""):
+            continue
+        if "_RunAnalystFinding" in body_text:
+            return True
+    return False
+
+
+def test_readme_config_b_claim_agrees_with_whether_the_cassettes_exist() -> None:
+    # Whitespace-normalised: the claim wraps across a markdown line break in
+    # the actual README source, and an exact multi-line substring silently
+    # never matches either branch -- caught only by running this test red
+    # first and seeing it pass for the wrong reason.
+    text = " ".join(README.read_text(encoding="utf-8").split())
+    config_b_recorded = _config_b_cassette_exists()
+    never_recorded_claim_present = (
+        'a second configuration ("Config B") was never recorded' in text
+    )
+
+    if config_b_recorded:
+        assert not never_recorded_claim_present, (
+            "tests/cassettes/ holds a Haiku-Analyst (Config B) cassette, "
+            "but README.md still claims Config B was never recorded"
+        )
+    else:
+        assert never_recorded_claim_present, (
+            "tests/cassettes/ holds no Config B cassette, but README.md no "
+            "longer says so -- the gap would be silently unstated rather "
+            "than recorded as real"
         )
