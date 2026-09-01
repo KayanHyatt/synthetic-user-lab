@@ -212,8 +212,13 @@ class CassetteCore:
             },
         }
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Trailing newline: pre-commit's end-of-file-fixer hook rewrites any
+        # committed file that lacks one, so a cassette written without it
+        # gets silently reformatted on the next commit that touches it --
+        # cost a whole commit attempt once already (PROJECT_SPEC.md §M6
+        # Deviation 18).
         path.write_text(
-            json.dumps(cassette, indent=2, sort_keys=True), encoding="utf-8"
+            json.dumps(cassette, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
 
     def _load(self, path: Path, request: Any) -> Any:
