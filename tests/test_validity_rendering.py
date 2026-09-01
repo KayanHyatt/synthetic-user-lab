@@ -118,6 +118,14 @@ def test_provenance_is_rendered_per_row_not_collapsed_to_one_value() -> None:
             bad_blocker_confusion_count=6,
             good_blocker_confusion_count=1,
             material_difference=True,
+            bad_personas_attempted=5,
+            bad_personas_completed=5,
+            good_personas_attempted=5,
+            good_personas_completed=5,
+            bad_category_counts={"blocker": 1, "confusion": 5},
+            good_category_counts={"delight": 1},
+            bad_distinct_anchor_count=5,
+            good_distinct_anchor_count=1,
             provenance=[
                 AgentProvenance(
                     agent="persona", provider="anthropic", model="claude-haiku-4-5"
@@ -142,6 +150,8 @@ def test_provenance_is_rendered_per_row_not_collapsed_to_one_value() -> None:
             detected_count=2,
             detection_rate=2 / 3,
             per_defect=[],
+            personas_attempted=5,
+            personas_completed=5,
             provenance=[
                 AgentProvenance(
                     agent="analyst", provider="anthropic", model="claude-sonnet-5"

@@ -37,9 +37,15 @@ Discriminative validity, acquiescence bias, position bias, and known-answer cali
 
 ### Discriminative validity
 
-{% if report.discriminative_validity.status == MEASURED %}
-- Bad artefact blocker/confusion count: {{ report.discriminative_validity.bad_blocker_confusion_count }}
-- Good artefact blocker/confusion count: {{ report.discriminative_validity.good_blocker_confusion_count }}
+{% if report.discriminative_validity.bad_blocker_confusion_count is not none %}
+{% if report.discriminative_validity.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** -- {{ report.discriminative_validity.reason }}
+
+{% endif %}
+- Bad artefact blocker/confusion count: {{ report.discriminative_validity.bad_blocker_confusion_count }} ({{ report.discriminative_validity.bad_personas_completed }}/{{ report.discriminative_validity.bad_personas_attempted }} personas)
+  - Category breakdown: {% for cat, count in report.discriminative_validity.bad_category_counts.items() %}{{ cat }}: {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "\n" }}  - Distinct evidence anchors (turn ordinal, category): {{ report.discriminative_validity.bad_distinct_anchor_count }}
+- Good artefact blocker/confusion count: {{ report.discriminative_validity.good_blocker_confusion_count }} ({{ report.discriminative_validity.good_personas_completed }}/{{ report.discriminative_validity.good_personas_attempted }} personas)
+  - Category breakdown: {% for cat, count in report.discriminative_validity.good_category_counts.items() %}{{ cat }}: {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "\n" }}  - Distinct evidence anchors (turn ordinal, category): {{ report.discriminative_validity.good_distinct_anchor_count }}
 - Material difference: {{ report.discriminative_validity.material_difference }}
 {% elif report.discriminative_validity.status == PARTIALLY_MEASURED %}
 **PARTIALLY MEASURED** ({{ report.discriminative_validity.provenance|length }} provenance rows) -- {{ report.discriminative_validity.reason }}
@@ -80,8 +86,12 @@ Discriminative validity, acquiescence bias, position bias, and known-answer cali
 
 ### Known-answer calibration
 
-{% if report.known_answer_calibration.status == MEASURED %}
-- Detected: {{ report.known_answer_calibration.detected_count }} / {{ report.known_answer_calibration.total_defects }}
+{% if report.known_answer_calibration.detected_count is not none %}
+{% if report.known_answer_calibration.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** ({{ report.known_answer_calibration.personas_completed }}/{{ report.known_answer_calibration.personas_attempted }} bad-artefact personas) -- {{ report.known_answer_calibration.reason }}
+
+{% endif %}
+- Detected: {{ report.known_answer_calibration.detected_count }} / {{ report.known_answer_calibration.total_defects }} ({{ report.known_answer_calibration.personas_completed }}/{{ report.known_answer_calibration.personas_attempted }} bad-artefact personas)
 - Detection rate: {{ report.known_answer_calibration.detection_rate }}
 {% elif report.known_answer_calibration.status == PARTIALLY_MEASURED %}
 **PARTIALLY MEASURED** -- {{ report.known_answer_calibration.reason }}

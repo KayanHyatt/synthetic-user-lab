@@ -77,8 +77,29 @@ def partially_measured_reason(*, attempted: int, measured: int) -> str:
     )
 
 
+def partially_measured_personas_reason(
+    *, artefact: str, attempted: int, completed: int
+) -> str:
+    """Sibling of `partially_measured_reason`, deliberately not a
+    generalisation of it (PROJECT_SPEC.md §M6 Deviation 19): that function's
+    wording ("subjects... completed every probe call") is specific to
+    §M6.3/§M6.4's single-shot probe calls and would misdescribe a §M6.2
+    turn-loop persona run, which is a multi-turn conversation plus one
+    Analyst dispatch, not one probe call.
+    """
+    return (
+        f"{completed} of {attempted} personas' turn-loop runs completed for "
+        f"the {artefact}-artefact study; the rest failed mid-run (a "
+        "provider error contained per-run -- PROJECT_SPEC.md §M7 Deviation "
+        "17 -- rather than aborting the whole study) and contributed no "
+        "Finding rows to this section's count, which is computed only over "
+        "the personas that completed."
+    )
+
+
 __all__ = [
     "NOT_MEASURED_OFFLINE_REASON",
     "MeasurementStatus",
+    "partially_measured_personas_reason",
     "partially_measured_reason",
 ]

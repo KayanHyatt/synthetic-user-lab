@@ -87,7 +87,18 @@ class ReproducibilitySection(BaseModel):
 
 
 class DiscriminativeValiditySection(BaseModel):
-    """PROJECT_SPEC.md §M6.2."""
+    """PROJECT_SPEC.md §M6.2.
+
+    `bad_personas_attempted`/`bad_personas_completed` and their `good_`
+    equivalents (§M6 Deviation 19) are two independent denominators, not
+    one shared pair like `AcquiescenceSection`/`PositionBiasSection` --
+    discriminative validity runs two separate panels (bad artefact, good
+    artefact), each with its own completion count. `bad_category_counts`/
+    `good_category_counts`/`bad_distinct_anchor_count`/
+    `good_distinct_anchor_count` (§M6 Deviation 20) disclose what
+    `bad_blocker_confusion_count`/`good_blocker_confusion_count` are a sum
+    of -- that sum is unchanged by this deviation, only what accompanies it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -96,6 +107,14 @@ class DiscriminativeValiditySection(BaseModel):
     bad_blocker_confusion_count: int | None = None
     good_blocker_confusion_count: int | None = None
     material_difference: bool | None = None
+    bad_personas_attempted: int | None = None
+    bad_personas_completed: int | None = None
+    good_personas_attempted: int | None = None
+    good_personas_completed: int | None = None
+    bad_category_counts: dict[str, int] | None = None
+    good_category_counts: dict[str, int] | None = None
+    bad_distinct_anchor_count: int | None = None
+    good_distinct_anchor_count: int | None = None
     provenance: list[AgentProvenance]
 
 
@@ -155,6 +174,15 @@ class KnownAnswerCalibrationSection(BaseModel):
     the criterion it specifies is recall against a fixed known-answer set
     ("detection rate"), not confidence calibration -- see the M6
     implementation note in PROJECT_SPEC.md.
+
+    `personas_attempted`/`personas_completed` (§M6 Deviation 19) are the
+    bad-artefact study's own denominator, inherited rather than
+    independently computed -- this section reads
+    `discriminative_result.bad_rows` directly (the identical row set
+    `DiscriminativeValiditySection.bad_*` is built from), so a persona
+    dropout affects both sections identically; two sections disagreeing
+    about the same underlying panel would be worse than the hole this
+    closes.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -165,6 +193,8 @@ class KnownAnswerCalibrationSection(BaseModel):
     detected_count: int | None = None
     detection_rate: float | None = None
     per_defect: list[DefectResult] | None = None
+    personas_attempted: int | None = None
+    personas_completed: int | None = None
     provenance: list[AgentProvenance]
 
 

@@ -116,6 +116,14 @@ async def test_reproducibility_never_touches_the_harness_level_provider(
             bad_study_id=0,
             good_study_id=0,
             provenance=[],
+            bad_personas_attempted=0,
+            bad_personas_completed=0,
+            good_personas_attempted=0,
+            good_personas_completed=0,
+            bad_category_counts={},
+            good_category_counts={},
+            bad_distinct_anchor_count=0,
+            good_distinct_anchor_count=0,
         )
 
     async def _fake_acquiescence(*args: object, **kwargs: object) -> AcquiescenceResult:

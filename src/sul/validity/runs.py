@@ -46,10 +46,20 @@ class ArtefactStudyRun:
     provenance (`sul.validity.data.load_provenance`) have to know which
     study's `ModelCall` rows to read back -- the rows alone don't carry
     that.
+
+    `personas_attempted`/`personas_completed` (PROJECT_SPEC.md §M6
+    Deviation 19) come straight from `run_study`'s own `StudyRunSummary`,
+    which this function already receives and, before this deviation,
+    discarded entirely. `personas_completed = personas_attempted -
+    len(summary.failed)` -- correct whether or not any persona's `Run` was
+    already `COMPLETED` from an earlier call (`summary.already_completed`
+    counts as completed too, same as a freshly-succeeded one).
     """
 
     rows: list[FindingRow]
     study_id: int
+    personas_attempted: int
+    personas_completed: int
 
 
 async def run_artefact_study(
@@ -110,7 +120,7 @@ async def run_artefact_study(
         if max_cost_usd is not None
         else None
     )
-    await run_study(
+    summary = await run_study(
         session_factory,
         study_id=materialized.study_id,
         scenario_id=materialized.scenario_id,
@@ -123,7 +133,12 @@ async def run_artefact_study(
 
     with session_factory() as session:
         rows = load_finding_rows(session, study_id=materialized.study_id)
-    return ArtefactStudyRun(rows=rows, study_id=materialized.study_id)
+    return ArtefactStudyRun(
+        rows=rows,
+        study_id=materialized.study_id,
+        personas_attempted=summary.total_personas,
+        personas_completed=summary.total_personas - len(summary.failed),
+    )
 
 
 @dataclass(frozen=True)

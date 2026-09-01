@@ -41,10 +41,10 @@ mixed run can back different checks with different providers or models.
 | Check | Result | Provenance |
 |---|---|---|
 | 1. Reproducibility | variance {{ report.reproducibility.finding_count_variance }}, Jaccard {{ report.reproducibility.mean_top5_cluster_jaccard }} | {{ provenance_cell(report.reproducibility.provenance) }} |
-| 2. Discriminative validity | {% if report.discriminative_validity.status == MEASURED %}material difference: {{ report.discriminative_validity.material_difference }}{% else %}{{ status_label(report.discriminative_validity.status) }}{% endif %} | {{ provenance_cell(report.discriminative_validity.provenance) }} |
+| 2. Discriminative validity | {% if report.discriminative_validity.material_difference is not none %}material difference: {{ report.discriminative_validity.material_difference }} ({{ report.discriminative_validity.bad_personas_completed }}/{{ report.discriminative_validity.bad_personas_attempted }}, {{ report.discriminative_validity.good_personas_completed }}/{{ report.discriminative_validity.good_personas_attempted }} personas){% if report.discriminative_validity.status != MEASURED %}, {{ status_label(report.discriminative_validity.status) }}{% endif %}{% else %}{{ status_label(report.discriminative_validity.status) }}{% endif %} | {{ provenance_cell(report.discriminative_validity.provenance) }} |
 | 3. Acquiescence bias | {% if report.acquiescence_bias.agreement_gap is not none %}gap: {{ report.acquiescence_bias.agreement_gap }} ({{ subject_denominator(report.acquiescence_bias) }}){% if report.acquiescence_bias.status != MEASURED %}, {{ status_label(report.acquiescence_bias.status) }}{% endif %}{% else %}{{ status_label(report.acquiescence_bias.status) }}{% endif %} | {{ provenance_cell(report.acquiescence_bias.provenance) }} |
 | 4. Position bias | {% if report.position_bias.preference_shift is not none %}shift: {{ report.position_bias.preference_shift }} ({{ subject_denominator(report.position_bias) }}){% if report.position_bias.status != MEASURED %}, {{ status_label(report.position_bias.status) }}{% endif %}{% else %}{{ status_label(report.position_bias.status) }}{% endif %} | {{ provenance_cell(report.position_bias.provenance) }} |
-| 5. Known-answer calibration | {% if report.known_answer_calibration.status == MEASURED %}{{ report.known_answer_calibration.detected_count }}/{{ report.known_answer_calibration.total_defects }}{% else %}{{ status_label(report.known_answer_calibration.status) }}{% endif %} | {{ provenance_cell(report.known_answer_calibration.provenance) }} |
+| 5. Known-answer calibration | {% if report.known_answer_calibration.detected_count is not none %}{{ report.known_answer_calibration.detected_count }}/{{ report.known_answer_calibration.total_defects }} ({{ report.known_answer_calibration.personas_completed }}/{{ report.known_answer_calibration.personas_attempted }} personas){% if report.known_answer_calibration.status != MEASURED %}, {{ status_label(report.known_answer_calibration.status) }}{% endif %}{% else %}{{ status_label(report.known_answer_calibration.status) }}{% endif %} | {{ provenance_cell(report.known_answer_calibration.provenance) }} |
 
 ## 1. Reproducibility
 
@@ -66,11 +66,17 @@ mixed run can back different checks with different providers or models.
 
 - **Provenance:** {{ provenance_cell(report.discriminative_validity.provenance) }}
 
-{% if report.discriminative_validity.status != MEASURED %}
+{% if report.discriminative_validity.bad_blocker_confusion_count is none %}
 **{{ status_label(report.discriminative_validity.status) }}** -- {{ report.discriminative_validity.reason }}
 {% else %}
-- Bad artefact blocker/confusion count: {{ report.discriminative_validity.bad_blocker_confusion_count }}
-- Good artefact blocker/confusion count: {{ report.discriminative_validity.good_blocker_confusion_count }}
+{% if report.discriminative_validity.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** -- {{ report.discriminative_validity.reason }}
+
+{% endif %}
+- Bad artefact blocker/confusion count: {{ report.discriminative_validity.bad_blocker_confusion_count }} ({{ report.discriminative_validity.bad_personas_completed }}/{{ report.discriminative_validity.bad_personas_attempted }} personas)
+  - Category breakdown: {% for cat, count in report.discriminative_validity.bad_category_counts.items() %}{{ cat }}: {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "\n" }}  - Distinct evidence anchors (turn ordinal, category): {{ report.discriminative_validity.bad_distinct_anchor_count }}
+- Good artefact blocker/confusion count: {{ report.discriminative_validity.good_blocker_confusion_count }} ({{ report.discriminative_validity.good_personas_completed }}/{{ report.discriminative_validity.good_personas_attempted }} personas)
+  - Category breakdown: {% for cat, count in report.discriminative_validity.good_category_counts.items() %}{{ cat }}: {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{{ "\n" }}  - Distinct evidence anchors (turn ordinal, category): {{ report.discriminative_validity.good_distinct_anchor_count }}
 - Material difference: {{ report.discriminative_validity.material_difference }}
 {% endif %}
 
@@ -123,12 +129,16 @@ detection rate"), not confidence calibration.
 
 - **Provenance:** {{ provenance_cell(report.known_answer_calibration.provenance) }} (same underlying runs as §2 -- §M6.5 reads the bad-artefact rows §M6.2 already produced)
 
-{% if report.known_answer_calibration.status != MEASURED %}
+{% if report.known_answer_calibration.detected_count is none %}
 **{{ status_label(report.known_answer_calibration.status) }}** -- {{ report.known_answer_calibration.reason }}
 
 Total seeded defects: {{ report.known_answer_calibration.total_defects }}
 {% else %}
-- Detected: {{ report.known_answer_calibration.detected_count }} / {{ report.known_answer_calibration.total_defects }}
+{% if report.known_answer_calibration.status == PARTIALLY_MEASURED %}
+**PARTIALLY MEASURED** ({{ report.known_answer_calibration.personas_completed }}/{{ report.known_answer_calibration.personas_attempted }} bad-artefact personas) -- {{ report.known_answer_calibration.reason }}
+
+{% endif %}
+- Detected: {{ report.known_answer_calibration.detected_count }} / {{ report.known_answer_calibration.total_defects }} ({{ report.known_answer_calibration.personas_completed }}/{{ report.known_answer_calibration.personas_attempted }} bad-artefact personas)
 - Detection rate: {{ report.known_answer_calibration.detection_rate }}
 
 | Defect | Description | Detected |

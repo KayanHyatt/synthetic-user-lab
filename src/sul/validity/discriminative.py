@@ -35,6 +35,32 @@ def blocker_confusion_count(rows: list[FindingRow]) -> int:
     return sum(1 for r in rows if r.category in _DISCRIMINATIVE_CATEGORIES)
 
 
+def category_counts(rows: list[FindingRow]) -> dict[str, int]:
+    """What `blocker_confusion_count` sums (PROJECT_SPEC.md §M6 Deviation
+    20): the sum is defensible as the headline "does the panel separate a
+    bad artefact from a good one" metric and stays exactly as computed --
+    this is disclosure of what's inside it, not a redefinition. Two Analyst
+    models can produce the same sum from a different mix (a `blocker`
+    reclassified as `confusion` moves an item between buckets and leaves
+    the total unchanged), which the sum alone cannot reveal.
+    """
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row.category.value] = counts.get(row.category.value, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def distinct_anchor_count(rows: list[FindingRow]) -> int:
+    """How many distinct (turn ordinal, category) positions this artefact's
+    findings are anchored to, collapsed across personas (PROJECT_SPEC.md §M6
+    Deviation 20) -- two personas each reporting `(1, confusion)` is one
+    anchor position, not two; the point is coverage of the transcript, not
+    a second finding count. A smaller number alongside an unchanged sum
+    means fewer distinct places in the conversation are doing the work.
+    """
+    return len({(row.evidence_turn_ordinal, row.category.value) for row in rows})
+
+
 def is_material_difference(bad_count: int, good_count: int) -> bool:
     """The threshold rule §M6.2 leaves unspecified: the bad artefact's
     blocker/confusion count must be at least 1.5x the good artefact's *and*
@@ -55,6 +81,14 @@ class DiscriminativeValidityResult:
     bad_study_id: int
     good_study_id: int
     provenance: list[AgentProvenance]
+    bad_personas_attempted: int
+    bad_personas_completed: int
+    good_personas_attempted: int
+    good_personas_completed: int
+    bad_category_counts: dict[str, int]
+    good_category_counts: dict[str, int]
+    bad_distinct_anchor_count: int
+    good_distinct_anchor_count: int
 
 
 async def run_discriminative_validity(
@@ -119,6 +153,14 @@ async def run_discriminative_validity(
         bad_study_id=bad_run.study_id,
         good_study_id=good_run.study_id,
         provenance=provenance,
+        bad_personas_attempted=bad_run.personas_attempted,
+        bad_personas_completed=bad_run.personas_completed,
+        good_personas_attempted=good_run.personas_attempted,
+        good_personas_completed=good_run.personas_completed,
+        bad_category_counts=category_counts(bad_run.rows),
+        good_category_counts=category_counts(good_run.rows),
+        bad_distinct_anchor_count=distinct_anchor_count(bad_run.rows),
+        good_distinct_anchor_count=distinct_anchor_count(good_run.rows),
     )
 
 
@@ -128,6 +170,8 @@ __all__ = [
     "DEFAULT_PANEL_PATH",
     "DiscriminativeValidityResult",
     "blocker_confusion_count",
+    "category_counts",
+    "distinct_anchor_count",
     "is_material_difference",
     "run_discriminative_validity",
 ]

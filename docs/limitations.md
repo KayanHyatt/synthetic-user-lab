@@ -38,8 +38,12 @@ Discriminative validity, acquiescence bias, position bias, and known-answer cali
 
 ### Discriminative validity
 
-- Bad artefact blocker/confusion count: 6
-- Good artefact blocker/confusion count: 0
+- Bad artefact blocker/confusion count: 6 (5/5 personas)
+  - Category breakdown: blocker: 1, confusion: 5, missing_info: 2
+  - Distinct evidence anchors (turn ordinal, category): 5
+- Good artefact blocker/confusion count: 0 (5/5 personas)
+  - Category breakdown: delight: 2
+  - Distinct evidence anchors (turn ordinal, category): 1
 - Material difference: True
 
 ### Acquiescence bias
@@ -59,7 +63,7 @@ Discriminative validity, acquiescence bias, position bias, and known-answer cali
 
 ### Known-answer calibration
 
-- Detected: 1 / 3
+- Detected: 1 / 3 (5/5 bad-artefact personas)
 - Detection rate: 0.3333333333333333
 
 ## These numbers describe one specific model configuration

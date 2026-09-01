@@ -178,6 +178,14 @@ async def _default_discriminative(*args: object, **kwargs: object) -> object:
         bad_study_id=0,
         good_study_id=0,
         provenance=[],
+        bad_personas_attempted=5,
+        bad_personas_completed=5,
+        good_personas_attempted=5,
+        good_personas_completed=5,
+        bad_category_counts={},
+        good_category_counts={},
+        bad_distinct_anchor_count=0,
+        good_distinct_anchor_count=0,
     )
 
 

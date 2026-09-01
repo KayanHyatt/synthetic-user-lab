@@ -109,6 +109,7 @@ from sul.validity.reproducibility import measure_reproducibility
 from sul.validity.sentinel import (
     NOT_MEASURED_OFFLINE_REASON,
     MeasurementStatus,
+    partially_measured_personas_reason,
     partially_measured_reason,
 )
 
@@ -168,6 +169,59 @@ def _probe_status(
                 attempted=subjects_attempted, measured=subjects_measured
             ),
         )
+    return MeasurementStatus.MEASURED, None
+
+
+def _discriminative_status(
+    *,
+    offline: bool,
+    bad_attempted: int,
+    bad_completed: int,
+    good_attempted: int,
+    good_completed: int,
+) -> tuple[MeasurementStatus, str | None]:
+    """Resolve `DiscriminativeValiditySection`'s status from two independent
+    persona-completion denominators (PROJECT_SPEC.md §M6 Deviation 19) --
+    one bad-artefact study, one good-artefact study, either of which can
+    lose a persona independently of the other. Reuses `_probe_status` as-is
+    for the three-way status decision on each artefact (offline /
+    dropout / full), but never its `reason`: that string is written for
+    §M6.3/§M6.4's single-shot probe calls ("subjects... completed every
+    probe call"), which would misdescribe a §M6.2 turn-loop persona run --
+    see `partially_measured_personas_reason`, this section's own sibling.
+    Any dropout on either artefact degrades the whole section to
+    `PARTIALLY_MEASURED` (no tolerance threshold: the denominator printed
+    beside the count is the disclosure; where it stops being useful is the
+    reader's call, not this function's).
+    """
+    bad_status, _ = _probe_status(
+        offline=offline,
+        subjects_attempted=bad_attempted,
+        subjects_measured=bad_completed,
+    )
+    good_status, _ = _probe_status(
+        offline=offline,
+        subjects_attempted=good_attempted,
+        subjects_measured=good_completed,
+    )
+    if offline:
+        return MeasurementStatus.NOT_MEASURED_OFFLINE, NOT_MEASURED_OFFLINE_REASON
+
+    reasons = []
+    if bad_status == MeasurementStatus.PARTIALLY_MEASURED:
+        reasons.append(
+            partially_measured_personas_reason(
+                artefact="bad", attempted=bad_attempted, completed=bad_completed
+            )
+        )
+    if good_status == MeasurementStatus.PARTIALLY_MEASURED:
+        reasons.append(
+            partially_measured_personas_reason(
+                artefact="good", attempted=good_attempted, completed=good_completed
+            )
+        )
+    if reasons:
+        return MeasurementStatus.PARTIALLY_MEASURED, " ".join(reasons)
     return MeasurementStatus.MEASURED, None
 
 
@@ -253,15 +307,23 @@ async def run_validity_harness(
     else:
         # narrows for mypy; try/else guarantees this is set
         assert discriminative_result is not None
+        disc_status, disc_reason = _discriminative_status(
+            offline=offline,
+            bad_attempted=discriminative_result.bad_personas_attempted,
+            bad_completed=discriminative_result.bad_personas_completed,
+            good_attempted=discriminative_result.good_personas_attempted,
+            good_completed=discriminative_result.good_personas_completed,
+        )
         discriminative_validity = (
             DiscriminativeValiditySection(
-                status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-                reason=NOT_MEASURED_OFFLINE_REASON,
+                status=disc_status,
+                reason=disc_reason,
                 provenance=discriminative_result.provenance,
             )
             if offline
             else DiscriminativeValiditySection(
-                status=MeasurementStatus.MEASURED,
+                status=disc_status,
+                reason=disc_reason,
                 bad_blocker_confusion_count=(
                     discriminative_result.bad_blocker_confusion_count
                 ),
@@ -269,6 +331,18 @@ async def run_validity_harness(
                     discriminative_result.good_blocker_confusion_count
                 ),
                 material_difference=discriminative_result.material_difference,
+                bad_personas_attempted=discriminative_result.bad_personas_attempted,
+                bad_personas_completed=discriminative_result.bad_personas_completed,
+                good_personas_attempted=discriminative_result.good_personas_attempted,
+                good_personas_completed=discriminative_result.good_personas_completed,
+                bad_category_counts=discriminative_result.bad_category_counts,
+                good_category_counts=discriminative_result.good_category_counts,
+                bad_distinct_anchor_count=(
+                    discriminative_result.bad_distinct_anchor_count
+                ),
+                good_distinct_anchor_count=(
+                    discriminative_result.good_distinct_anchor_count
+                ),
                 provenance=discriminative_result.provenance,
             )
         )
@@ -276,11 +350,36 @@ async def run_validity_harness(
         calibration_result = measure_known_answer_calibration(
             discriminative_result.bad_rows
         )
+        # Calibration inherits the bad-artefact study's own denominator
+        # rather than computing (or combining) one of its own (PROJECT_SPEC.md
+        # §M6 Deviation 19): it reads discriminative_result.bad_rows
+        # directly, so a bad-artefact persona dropout affects both sections
+        # identically -- the good-artefact denominator plays no part here.
+        if offline:
+            calib_status, calib_reason = (
+                MeasurementStatus.NOT_MEASURED_OFFLINE,
+                NOT_MEASURED_OFFLINE_REASON,
+            )
+        elif (
+            discriminative_result.bad_personas_completed
+            < discriminative_result.bad_personas_attempted
+        ):
+            calib_status = MeasurementStatus.PARTIALLY_MEASURED
+            calib_reason = partially_measured_personas_reason(
+                artefact="bad",
+                attempted=discriminative_result.bad_personas_attempted,
+                completed=discriminative_result.bad_personas_completed,
+            )
+        else:
+            calib_status, calib_reason = MeasurementStatus.MEASURED, None
+
         known_answer_calibration = (
             KnownAnswerCalibrationSection(
-                status=MeasurementStatus.NOT_MEASURED_OFFLINE,
-                reason=NOT_MEASURED_OFFLINE_REASON,
+                status=calib_status,
+                reason=calib_reason,
                 total_defects=calibration_result.total_defects,
+                personas_attempted=discriminative_result.bad_personas_attempted,
+                personas_completed=discriminative_result.bad_personas_completed,
                 # M6.5 reads the same bad-artefact rows §M6.2 already
                 # produced (see the module docstring in
                 # `sul.validity.calibration`) -- same underlying ModelCalls,
@@ -289,11 +388,14 @@ async def run_validity_harness(
             )
             if offline
             else KnownAnswerCalibrationSection(
-                status=MeasurementStatus.MEASURED,
+                status=calib_status,
+                reason=calib_reason,
                 total_defects=calibration_result.total_defects,
                 detected_count=calibration_result.detected_count,
                 detection_rate=calibration_result.detection_rate,
                 per_defect=calibration_result.per_defect,
+                personas_attempted=discriminative_result.bad_personas_attempted,
+                personas_completed=discriminative_result.bad_personas_completed,
                 provenance=discriminative_result.provenance,
             )
         )

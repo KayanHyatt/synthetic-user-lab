@@ -18,10 +18,10 @@ mixed run can back different checks with different providers or models.
 | Check | Result | Provenance |
 |---|---|---|
 | 1. Reproducibility | variance 0.0, Jaccard 1.0 | `analyst`: fake/fake-1, `moderator`: fake/fake-1, `persona`: fake/fake-1 |
-| 2. Discriminative validity | material difference: True | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
+| 2. Discriminative validity | material difference: True (5/5, 5/5 personas) | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
 | 3. Acquiescence bias | gap: 1.0 (5/5 subjects) | `validity_probe`: anthropic/claude-haiku-4-5 |
 | 4. Position bias | shift: 0.0 (5/5 subjects) | `validity_probe`: anthropic/claude-haiku-4-5 |
-| 5. Known-answer calibration | 1/3 | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
+| 5. Known-answer calibration | 1/3 (5/5 personas) | `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 |
 
 ## 1. Reproducibility
 
@@ -43,8 +43,12 @@ mixed run can back different checks with different providers or models.
 
 - **Provenance:** `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5
 
-- Bad artefact blocker/confusion count: 6
-- Good artefact blocker/confusion count: 0
+- Bad artefact blocker/confusion count: 6 (5/5 personas)
+  - Category breakdown: blocker: 1, confusion: 5, missing_info: 2
+  - Distinct evidence anchors (turn ordinal, category): 5
+- Good artefact blocker/confusion count: 0 (5/5 personas)
+  - Category breakdown: delight: 2
+  - Distinct evidence anchors (turn ordinal, category): 1
 - Material difference: True
 
 ## 3. Acquiescence bias
@@ -74,7 +78,7 @@ detection rate"), not confidence calibration.
 
 - **Provenance:** `analyst`: anthropic/claude-sonnet-5, `moderator`: anthropic/claude-haiku-4-5, `persona`: anthropic/claude-haiku-4-5 (same underlying runs as §2 -- §M6.5 reads the bad-artefact rows §M6.2 already produced)
 
-- Detected: 1 / 3
+- Detected: 1 / 3 (5/5 bad-artefact personas)
 - Detection rate: 0.3333333333333333
 
 | Defect | Description | Detected |

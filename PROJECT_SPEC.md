@@ -1261,6 +1261,116 @@ states at least two concrete, measured weaknesses.
 > anywhere in this repo's prose. That is deliberately a separate step,
 > pending its own review.
 >
+> **Deviation 19 (a later session): `DiscriminativeValiditySection` and
+> `KnownAnswerCalibrationSection` had no completion denominator, unlike
+> `AcquiescenceSection`/`PositionBiasSection` — closed.** Found while
+> proving Deviation 18's 10 Config B cassettes complete: hiding one
+> genuinely-needed cassette by hand still produced `discriminative_
+> validity: measured` with an unchanged `bad_blocker_confusion_count`,
+> because `_run_one_persona`'s per-run containment (§M7 Deviation 17)
+> silently marks just the affected persona's `Run` `FAILED` and the
+> section finishes on whatever remains — a confident integer over fewer
+> personas than were actually attempted, with nothing to signal it.
+> **Deviation 17's containment is what made this reachable — that
+> interaction is the finding, not the missing field.** Before Deviation
+> 17, the same failure propagated out of `run_study` uncaught and was
+> caught by `run_validity_harness`'s own section-level
+> `except (ProviderError, StructuredOutputError)`, which correctly
+> degraded the *whole section* to `PARTIALLY_MEASURED`; moving containment
+> down to the per-run boundary (the right fix for its own stated reason —
+> a persona should not be able to take out siblings or the whole study)
+> removed the one thing that used to catch this.
+>
+> `DiscriminativeValiditySection` gained two independent denominator pairs
+> (`bad_personas_attempted`/`bad_personas_completed`,
+> `good_personas_attempted`/`good_personas_completed` — two, not one,
+> because discriminative validity runs two independent panels, unlike
+> acquiescence/position's single subject pool), sourced from the
+> `StudyRunSummary` that `run_artefact_study`
+> (`sul/validity/runs.py:113-122`, `ArtefactStudyRun`) already received
+> from `run_study` and discarded entirely — not recounted from `Run` rows.
+> `KnownAnswerCalibrationSection` gained one pair,
+> `personas_attempted`/`personas_completed`, **inherited from the
+> bad-artefact study rather than computed independently** — it reads
+> `discriminative_result.bad_rows` directly (`harness.py:276-277`, the
+> identical row set), so a bad-artefact dropout affects both sections
+> identically; two sections disagreeing about the same panel would be
+> worse than the hole this closes. Any dropout on either artefact degrades
+> the whole `DiscriminativeValiditySection` to `PARTIALLY_MEASURED` (no
+> tolerance threshold — the denominator printed beside the count is the
+> disclosure; where it stops being useful is the reader's call).
+> `sul.validity.harness._probe_status` is reused as-is for the per-artefact
+> three-way status decision, called once per artefact and combined; its
+> own `reason` text is discarded when `PARTIALLY_MEASURED`, since that
+> wording ("subjects... completed every probe call") is written for
+> §M6.3/§M6.4's single-shot probe calls and would misdescribe a §M6.2
+> turn-loop persona run — `sul.validity.sentinel
+> .partially_measured_personas_reason` is its sibling, not a
+> generalisation of it.
+>
+> **Negative control, permanent
+> (`tests/test_validity_discriminative_completeness.py`), shown red before
+> the fix, against a `tmp_path` copy of the real cassette directory — the
+> committed `tests/cassettes/` is never mutated.** The Sonnet Analyst
+> cassette for the one bad-artefact persona whose transcript escalates
+> across four turns (identified by grepping the committed cassettes for
+> that persona's own `blocker` finding text, not guessed) was deleted from
+> the copy. Pre-fix: `discriminative_validity.status == MEASURED`,
+> `bad_blocker_confusion_count == 4` (silently changed from 6, confidently
+> reported, no denominator). Post-fix: `PARTIALLY_MEASURED`,
+> `bad_personas_attempted=5`, `bad_personas_completed=4`,
+> `good_personas_attempted=good_personas_completed=5`,
+> `known_answer_calibration` degrades the same way with the same
+> denominator.
+>
+> **Deviation 20 (same session, same chain, recorded separately — a
+> different mechanism from Deviation 19's): `bad_blocker_confusion_count`/
+> `good_blocker_confusion_count` are sums, and a sum hides its own parts.**
+> Found by the finding-row comparison Deviation 18's own "what Config B is
+> not, yet" note deferred: Config A and Config B's bad-artefact aggregate
+> (6 vs 0, material difference `true`) is identical in both configs, but
+> the `Finding` rows behind it are not. Config A: 8 findings — `{blocker:
+> 1, confusion: 5, missing_info: 2}` — including one severity-4 `blocker`
+> ("felt stuck and unable to proceed") anchored at 5 distinct (turn
+> ordinal, category) positions across one persona's four-turn escalation.
+> Config B, replaying the identical transcript: 7 findings — `{confusion:
+> 6, missing_info: 1}` — **zero `blocker` findings**, anchored at only 2
+> distinct positions. Reclassifying Config A's one `blocker` as `confusion`
+> moves an item between the two categories the metric sums and leaves the
+> sum unchanged (1+5 = 0+6 = 6) — the two configs did not agree; the metric
+> could not disagree. On the good artefact, both configs report 0 (all
+> `delight`), but Config A's Sonnet Analyst emitted a finding for only 2 of
+> 5 personas while Config B's Haiku Analyst emitted one for all 5 —
+> reticence about flagging nothing, not a category or severity difference,
+> since 0 is exactly the number a broken Analyst also produces and this
+> confirms it wasn't one.
+>
+> **The fix is disclosure, not redefinition — `bad_blocker_confusion_count`/
+> `good_blocker_confusion_count` still compute exactly what they always
+> did.** Summing `blocker`+`confusion` remains defensible as the headline
+> "does the panel separate a bad artefact from a good one" metric; changing
+> it would silently invalidate every committed number, including Config
+> A's own. `DiscriminativeValiditySection` gained
+> `bad_category_counts`/`good_category_counts` (a `dict[str, int]`, every
+> category present in that artefact's findings, not just the two the
+> headline sums) and `bad_distinct_anchor_count`/`good_distinct_anchor_count`
+> (the count of distinct (turn ordinal, category) positions, collapsed
+> across personas — coverage of the transcript, not a second finding
+> count), computed purely in memory from `discriminative_result.bad_rows`/
+> `good_rows` (`Finding.category`/`.severity`/`FindingRow
+> .evidence_turn_ordinal` were already resolved by `load_finding_rows`'s
+> existing join — zero new queries) via
+> `sul.validity.discriminative.category_counts`/`.distinct_anchor_count`.
+> Rendered beside the existing headline number in both
+> `validity_report.md.j2` and `limitations.md.j2`, the same place the
+> Deviation 19 denominators render.
+>
+> `.\make.ps1 validate` was re-run after both fixes; the diff against
+> `docs/validity_report.md`/`docs/limitations.md` is purely additive —
+> every existing number (`6`, `0`, `True`, `1/3`, `0.3333333333333333`)
+> unchanged, only denominators and composition breakdowns appended beside
+> them.
+>
 > **Amended the same session: Deviation 12's "left open" call turned out to
 > be wrong on reflection — see Deviation 13.** Committing 46 cassettes whose
 > own real numbers `docs/limitations.md` now describes, while `make
