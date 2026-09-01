@@ -1175,6 +1175,7 @@ states at least two concrete, measured weaknesses.
 >   `ProviderError` generally (carried over from Deviation 11's own "not
 >   done" note above) — real either way, independent of the cassette bug,
 >   and also not fixed tonight.
+>   **Fixed in a later session — see Deviation 17 (§M7).**
 > - `run_validity_harness`'s `max_cost_usd` was unbounded in this recording
 >   pass; that was an oversight, not the intent. `scripts
 >   /record_validity_cassettes.py` now takes `--max-cost-usd` (default
@@ -1292,7 +1293,8 @@ states at least two concrete, measured weaknesses.
 > below. It is unrelated to the cassette bug above (it never actually fired
 > during either the failing runs' persona dispatch *or* the fix's own
 > verification, since replay-only diagnostics never touch `run_study`) and
-> remains real, independent, unfixed.
+> remains real, independent, unfixed. **Fixed in a later session — see
+> Deviation 17 (§M7).**
 
 ---
 
@@ -1310,6 +1312,8 @@ states at least two concrete, measured weaknesses.
 > a cassette bug, Deviation 12/13; this gap is real independent of that).
 > Not part of this section's own scope as written; flagged here as the
 > nearest natural checkpoint to pick it up before it's forgotten.
+> **Fixed in a later session — see Deviation 17, further below in this
+> section.**
 
 - Typer CLI: `sul personas sample`, `sul run`, `sul report`, `sul cost`,
   `sul validate`.
@@ -1590,6 +1594,65 @@ reviewer with no keys can still see it work in 60 seconds.
 > `ProviderError` at all. The only path that can reach the gap is
 > `sul run --provider anthropic`, a real dispatch a user asked for by name —
 > unchanged from before this milestone, not newly exposed by it.
+>
+> **Amended this session (Deviation 17): the `ProviderError` gap above is
+> fixed, not just recorded.** `sul.runner.orchestrator._run_one_persona`'s
+> per-run exception handling now has two clauses: `except BudgetExceeded`
+> (unchanged, still the sole handler of the study-wide budget-guard case),
+> then `except (ProviderError, StructuredOutputError)` (new) — kept
+> separate because `BudgetExceeded` is itself a `ProviderError` subclass
+> (`sul.providers.budget.BudgetExceeded`), so a single broad
+> `except ProviderError` would silently swallow the budget-guard case in
+> the same clause and erase its documented study-wide-stop semantics. A
+> persona run that fails on `RateLimited` exhausted past
+> `call_with_backoff`'s retries, `Refused`, `BadRequest`, `Overloaded`, or a
+> raw connection error is now marked `FAILED` with the error recorded,
+> exactly like the `BudgetExceeded`/`StructuredOutputError` cases already
+> were, instead of being left stuck at whatever status it last had with
+> `error` still `None`.
+>
+> **Negative control written first, run against pre-fix `main`, shown red
+> before any source change:** `tests/test_orchestrator_provider_error
+> _containment.py` scripts an `Overloaded` (not `RateLimited` —
+> `sul.runner.retry.call_with_backoff` deliberately never retries it, so
+> one raise reaches the boundary undelayed) on the first `PersonaReply`
+> dispatch of a two-persona study (`tests/fixtures/panel_2.yaml`). Against
+> pre-fix `main` this failed with `run_study` propagating the raw
+> `Overloaded` exception and both `Run` rows left at `(RUNNING, None)` /
+> `(PENDING, None)` — the sibling persona never even started, since
+> `asyncio.gather`'s default behaviour raises as soon as the first task
+> fails, without waiting for (or cancelling) the others. Post-fix, the same
+> test passes unmodified: the failing run ends `FAILED` with a non-empty
+> `error`, the sibling ends `COMPLETED`, and `StudyRunSummary.failed`/
+> `.completed` each have exactly one entry.
+>
+> **Behaviour change, documented in `sul.runner.orchestrator`'s own module
+> docstring and in `README.md`'s "what I'd do differently" section:** a
+> study-wide fatal that isn't a budget breach (a bad API key, concretely —
+> confirmed via `src/sul/providers/anthropic.py`: a 401 falls through to a
+> plain `ProviderError`, not one of the named subclasses) used to abort the
+> whole `run_study` call on its first occurrence. It now surfaces once per
+> persona instead of once per study: every persona's own first dispatch
+> hits the same failure independently and is caught, so a bad key now
+> produces N `FAILED` rows with the error recorded, not one crash with
+> everything else left in whatever state it was in.
+>
+> **Not changed, on explicit instruction, pending a separate decision:**
+> `run_study`'s `asyncio.gather(*...)` stays as-is rather than becoming
+> `asyncio.TaskGroup`. Now that every named `ProviderError` family (and
+> `StructuredOutputError`) is caught per-run, `gather`'s known gotcha — an
+> unhandled exception in one task doesn't cancel still-running siblings —
+> only matters for the genuinely-unexpected residual case the module
+> docstring already calls "the offline analogue of the process actually
+> being killed." `TaskGroup` would close that gap but raises
+> `ExceptionGroup` instead of the original exception type, a breaking
+> change to `run_study`'s own documented contract; deferred as a follow-up,
+> not implemented here.
+>
+> `.\make.ps1 check` is green: **344 tests**, up from 343 at `f59a003`
+> (+1, `tests/test_orchestrator_provider_error_containment.py`). No real
+> provider call made this session — `ScriptedProvider` throughout. Session
+> spend: $0.00.
 >
 > **Deviation: `sul.web` (the dashboard) is strictly read-only, enforced at
 > the AST level, not just by docstring.** §M7 says "Read-only is fine" —

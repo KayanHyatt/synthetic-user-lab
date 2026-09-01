@@ -172,13 +172,14 @@ study actually run.
   weakness in `docs/limitations.md` means a rendered report cannot tell a
   genuine rare finding from a clustering artefact, and only a human reading
   the transcript (or a real participant) can.
-- **Fix the known gaps in provider-error handling before running this against
-  a live, rate-limited provider for real stakes.**
-  `sul.runner.orchestrator._run_one_persona` currently catches only
-  `(BudgetExceeded, StructuredOutputError)`, never a generic `ProviderError`
-  — a persona run that fails on `RateLimited`, `Refused`, or a raw connection
-  error is left stuck, never marked `FAILED` (recorded, deliberately
-  unfixed, as Deviation 12 in `PROJECT_SPEC.md`).
+- **Still watch `sul run --provider anthropic` against a live, rate-limited
+  provider for real stakes** — a run that fails on `RateLimited` exhausted,
+  `Refused`, `BadRequest`, `Overloaded`, or a raw connection error is now
+  caught and marked `FAILED` per-run (`sul.runner.orchestrator
+  ._run_one_persona`, PROJECT_SPEC.md Deviation 17), not left stuck, but a
+  study-wide fatal like a bad API key now surfaces as one `FAILED` row per
+  persona instead of one crash — read `StudyRunSummary.failed`, don't assume
+  `run_study` raising is still the signal for "the whole study is unusable."
 
 ## Claim-trace
 
@@ -197,6 +198,7 @@ or **Unverified** (stated as such, never silently implied).
 | Persona never sees research goal | Structural | `tests/test_isolation.py::test_persona_panel_relationship_raises_on_lazy_load`, `::test_persona_context_never_leaks_sentinels` |
 | A repaired call writes two `ModelCall` rows | Structural | `tests/test_structured_output.py::test_repair_turn_can_succeed` |
 | Standing caveat survives every HTMX swap | Structural | `tests/test_web_caveat.py::test_caveat_element_is_never_inside_an_htmx_swap_target` |
+| A persona run failing on `Overloaded`/`RateLimited`/`Refused`/`BadRequest`/a connection error is marked `FAILED` with a recorded error, never left stuck `RUNNING`, and sibling personas are unaffected | Structural | `tests/test_orchestrator_provider_error_containment.py::test_a_provider_error_other_than_budget_marks_the_run_failed` |
 | No test hits a real LLM API | Structural | session-scoped socket guard, `tests/conftest.py` |
 | 40-persona study cost | Unverified (extrapolation) | scaled ×8 from the measured 5-persona table above |
 | `openai`/`gemini` cost tiers | Unverified (no rate card) | `configs/pricing.yaml` — sections deliberately empty |

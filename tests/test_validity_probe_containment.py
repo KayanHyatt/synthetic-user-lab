@@ -2,7 +2,8 @@
 found (PROJECT_SPEC.md §M6, Deviation 9) -- real structured-output failures
 crashing the whole harness because the probe path had no per-run
 containment analogous to `sul.runner.orchestrator._run_one_persona`'s
-`except (BudgetExceeded, StructuredOutputError)` boundary.
+per-run `except BudgetExceeded` / `except (ProviderError,
+StructuredOutputError)` boundary.
 
 Two layers are tested separately, deliberately: `sul.validity.acquiescence`/
 `.position`'s per-subject containment is exercised directly against

@@ -50,9 +50,9 @@ def text_completion(text: str, *, model: str = "fake-1") -> Completion:
 class SimulatedCrash(Exception):
     """A stand-in for the process being killed: a genuinely unexpected
     failure that `sul.runner.orchestrator._run_one_persona` does not catch
-    (only `BudgetExceeded` and `StructuredOutputError` are handled per-run),
-    so it propagates all the way out of `run_study`, leaving whatever was
-    already committed in place.
+    (only `BudgetExceeded`, `ProviderError`, and `StructuredOutputError` are
+    handled per-run), so it propagates all the way out of `run_study`,
+    leaving whatever was already committed in place.
     """
 
 

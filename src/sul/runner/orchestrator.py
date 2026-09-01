@@ -22,15 +22,42 @@ skipped; anything else (missing, `PENDING`, `RUNNING`, or `FAILED` -- the
 three states a killed process can leave behind) has its partial `Turn`/
 `Finding` rows cleared and is (re)run from scratch, never duplicated.
 
-A study-wide `BudgetGuard` failure (`BudgetExceeded`) is caught once, at the
+A study-wide `BudgetGuard` failure (`BudgetExceeded`) is caught first, at the
 per-run boundary -- never per-turn, never turned into a skipped turn or a
 truncated-but-successful run. That run is marked `FAILED` with its
 already-written turns left in place (PROJECT_SPEC.md §M4: "exits cleanly
 with partial results saved"); because the guard is shared across every
 `ModelClient` in the study, every other in-flight or not-yet-started call
 starts failing the same way on its own next dispatch, so nothing keeps
-spending. Any other exception (a genuinely unexpected failure -- the offline
-analogue of the process actually being killed) is deliberately left
+spending.
+
+Every other `ProviderError` (`RateLimited` exhausted past `call_with_backoff`'s
+retries, `Refused`, `BadRequest`, `Overloaded`, a raw connection error) is
+caught in a second clause alongside `StructuredOutputError`, and marks that
+run `FAILED` the same way (PROJECT_SPEC.md §M6 Deviation 11-13 / §M7,
+carried-forward gap closed here). Deliberately kept in its own `except`
+clause rather than folded into one `except ProviderError`: `BudgetExceeded`
+is itself a `ProviderError` subclass (`sul.providers.budget`), and a single
+broad clause would silently absorb the budget-guard case above, erasing its
+study-wide-stop semantics.
+
+**Behaviour change from earlier sessions:** a study-wide fatal that is not a
+budget breach -- a bad API key, most concretely -- used to abort the whole
+`run_study` call on its first occurrence (an uncaught `ProviderError`
+propagating out of `_run_one_persona`, leaving every other persona's `Run`
+row wherever it happened to be, `RUNNING` or `PENDING`, with no error
+recorded). It now surfaces once per persona instead of once per study: each
+persona's own first dispatch hits the same failure independently, and each
+is caught and marked `FAILED` with the error recorded, rather than one raise
+aborting every run still in flight. Nothing keeps spending (the failure is
+per-call, never billed), and every persona ends the study in a terminal,
+inspectable state -- but a caller that watched for "`run_study` raised" as
+its signal for "the whole study is unusable" now has to read
+`StudyRunSummary.failed` instead.
+
+Any exception that is neither `BudgetExceeded`, another `ProviderError`, nor
+`StructuredOutputError` (a genuinely unexpected failure -- the offline
+analogue of the process actually being killed) is still deliberately left
 uncaught here and propagates out of `run_study`, leaving whatever was
 already committed in place for the next `run_study` call to resume from.
 """
@@ -52,7 +79,7 @@ from sul.agents.persona import run_persona_turn
 from sul.db import session_scope
 from sul.enums import AgentRole, ArtefactKind, RunStatus, TurnRole
 from sul.models._util import utcnow
-from sul.providers.base import LLMProvider
+from sul.providers.base import LLMProvider, ProviderError
 from sul.providers.budget import BudgetExceeded, BudgetGuard
 from sul.providers.client import ModelClient, StructuredOutputError
 from sul.runner.retry import call_with_backoff
@@ -483,10 +510,26 @@ async def _run_one_persona(
             return RunOutcome(
                 run_id=run_id, persona_id=slot.persona_id, status=RunStatus.COMPLETED
             )
-        except (BudgetExceeded, StructuredOutputError) as exc:
+        except BudgetExceeded as exc:
             # Caught once, at this per-run boundary -- never per-turn, and
             # never converted into a skipped turn or a truncated-but-
             # successful run. Everything already written for this run stays.
+            await _to_thread_locked(
+                db_lock, _mark_run_failed, session_factory, run_id, str(exc)
+            )
+            return RunOutcome(
+                run_id=run_id,
+                persona_id=slot.persona_id,
+                status=RunStatus.FAILED,
+                error=str(exc),
+            )
+        except (ProviderError, StructuredOutputError) as exc:
+            # Any other provider failure (RateLimited exhausted, Refused,
+            # BadRequest, Overloaded, a raw connection error) or a terminal
+            # structured-output parse failure -- same per-run containment as
+            # BudgetExceeded above, kept as a separate clause so this one
+            # can never shadow that one (BudgetExceeded is itself a
+            # ProviderError subclass). See the module docstring.
             await _to_thread_locked(
                 db_lock, _mark_run_failed, session_factory, run_id, str(exc)
             )
@@ -516,10 +559,11 @@ async def run_study(
     """Run every persona in `study_id`'s panel(s) through `scenario_id` once.
 
     Idempotent at `Run` granularity: a persona whose `Run` is already
-    `COMPLETED` is skipped; anything else is (re)run. Any exception other
-    than `BudgetExceeded`/`StructuredOutputError` (both handled per-run, see
-    the module docstring) propagates out of this call uncaught, leaving
-    whatever was already committed in place for the next call to resume.
+    `COMPLETED` is skipped; anything else is (re)run. `BudgetExceeded`, any
+    other `ProviderError`, and `StructuredOutputError` are all handled
+    per-run (see the module docstring); any other exception propagates out
+    of this call uncaught, leaving whatever was already committed in place
+    for the next call to resume.
 
     `model` is the default model dispatched to every agent. `model_by_agent`
     optionally overrides it per `AgentRole` (`PERSONA`, `MODERATOR`,

@@ -10,9 +10,10 @@ survived the one bounded repair turn) is therefore discarded from *both*
 sinks atomically, never just the framing that failed -- each subject's two
 replies are accumulated into local variables first and only extended onto
 the shared sinks once both calls for that subject have succeeded. This
-mirrors `sul.runner.orchestrator._run_one_persona`'s per-run
-`except (BudgetExceeded, StructuredOutputError)` boundary (PROJECT_SPEC.md
-§M4), scoped to one subject instead of one persona's whole turn loop, plus
+mirrors `sul.runner.orchestrator._run_one_persona`'s per-run containment --
+`except BudgetExceeded`, then `except (ProviderError, StructuredOutputError)`
+(PROJECT_SPEC.md §M4, §M7 carry-forward fix) -- scoped to one subject
+instead of one persona's whole turn loop, plus
 `call_with_backoff` (`sul.runner.retry`) around each individual probe call
 -- neither of which this module had before this deviation; a single
 transient `RateLimited` used to kill the whole harness run with no retry at
