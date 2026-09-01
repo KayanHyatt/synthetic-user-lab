@@ -162,11 +162,6 @@ study actually run.
   direction of the answer — only whether it *notices something to say at
   all*, which is closer to what discriminative validity and known-answer
   calibration actually measure.
-- **Run a second Analyst configuration before citing calibration or
-  discriminative validity as general properties of the harness.** Both
-  numbers describe Sonnet-as-Analyst specifically; a cheaper or different
-  Analyst model is a different measurement, not a cheaper version of this
-  one.
 - **Recruit real participants for anything the panel flags with `severity`
   disagreement or a singleton cluster** — the zero-vector-conflation
   weakness in `docs/limitations.md` means a rendered report cannot tell a
@@ -191,9 +186,10 @@ or **Unverified** (stated as such, never silently implied).
 | Claim | Category | Evidence |
 |---|---|---|
 | Acquiescence gap 1.0 (5/5) | Measured | `docs/validity_report.md` §3 |
-| Known-answer calibration 1/3 | Measured | `docs/validity_report.md` §5 |
-| Discriminative validity 6 vs 0 | Measured | `docs/validity_report.md` §2 |
+| Known-answer calibration 1/3 (5/5 bad-artefact personas) | Measured | `docs/validity_report.md` §5 |
+| Discriminative validity 6 vs 0 over 5/5 personas per artefact | Measured | `docs/validity_report.md` §2 |
 | Position bias shift 0.0 (5/5) | Measured | `docs/validity_report.md` §4 |
+| Swapping the Analyst from Sonnet to Haiku (Config B) leaves the bad-artefact blocker/confusion aggregate and material-difference verdict unchanged (6 vs 0 either way) but not its composition: 0 `blocker` findings vs Sonnet's 1, 2 distinct evidence anchors vs Sonnet's 5, lower severities, at roughly a quarter the Analyst spend — one panel, one seed, one artefact pair, not a general property of either model | Measured | `tests/test_validity_cassette_report_determinism.py::test_config_b_numbers_are_reproducible_and_complete` |
 | Reproducibility variance 0.0 (structural, not empirical) | Measured + caveated | `docs/validity_report.md` §1, `REPRODUCIBILITY_CAVEAT` |
 | Persona never sees research goal | Structural | `tests/test_isolation.py::test_persona_panel_relationship_raises_on_lazy_load`, `::test_persona_context_never_leaks_sentinels` |
 | A repaired call writes two `ModelCall` rows | Structural | `tests/test_structured_output.py::test_repair_turn_can_succeed` |

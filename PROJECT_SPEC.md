@@ -1259,7 +1259,10 @@ states at least two concrete, measured weaknesses.
 > cleanly, but nothing in `sul validate`'s own path reads them (by design —
 > see above), and no Haiku-vs-Sonnet Analyst comparison has been written up
 > anywhere in this repo's prose. That is deliberately a separate step,
-> pending its own review.
+> pending its own review. **Written in a later session — see Deviation 20
+> below (the composition-hole fix) for what the comparison actually
+> found, and the two prose sites (`limitations.md.j2`, README's
+> Claim-trace table) for where it was written up.**
 >
 > **Deviation 19 (a later session): `DiscriminativeValiditySection` and
 > `KnownAnswerCalibrationSection` had no completion denominator, unlike
@@ -1370,6 +1373,36 @@ states at least two concrete, measured weaknesses.
 > every existing number (`6`, `0`, `True`, `1/3`, `0.3333333333333333`)
 > unchanged, only denominators and composition breakdowns appended beside
 > them.
+>
+> **The Haiku-vs-Sonnet Analyst comparison itself, written up in the two
+> agreed places, once this section's own composition fields made it
+> possible to cite a denominator instead of a bare aggregate.** Backed by
+> a committed, regenerable test, not scrollback — `tests/test_validity
+> _cassette_report_determinism.py::test_config_b_numbers_are_reproducible
+> _and_complete` was extended with the exact composition values asserted
+> (`bad_category_counts == {"confusion": 6, "missing_info": 1}`,
+> `bad_distinct_anchor_count == 2`, against Config A's own committed
+> `{blocker: 1, confusion: 5, missing_info: 2}` / 5, both in
+> `docs/validity_report.md`) before either prose site was written, exactly
+> to avoid reintroducing Deviation 13's own defect shape (a claim the repo
+> asserts but cannot regenerate). `src/sul/validity/templates
+> /limitations.md.j2`'s "do not transfer down a model tier" paragraph
+> gained one sentence naming the measured delta and citing that test,
+> regenerated via the real `sul validate` path (`docs/validity_report.md`
+> untouched, confirmed by diff — the sentence lives only in
+> `limitations.md.j2`/`docs/limitations.md`, never
+> `docs/validity_report.md`, per this project's own standing rule since
+> `docs/validity_report_recorded.md` was deleted for exactly that).
+> README's now-answered "Run a second Analyst configuration before
+> citing..." bullet was removed from "What I'd do differently" and
+> replaced by a Measured Claim-trace row citing the same test; the
+> existing "Discriminative validity 6 vs 0" and "Known-answer calibration
+> 1/3" Claim-trace rows gained their own denominators in the same pass
+> ("6 vs 0 over 5/5 personas per artefact" / "1/3 (5/5 bad-artefact
+> personas)") — strictly stronger claims on the same evidence, not new
+> ones. The comparison is scoped throughout to what was actually run: one
+> panel, 5 personas, one seed, one artefact pair, this Haiku Analyst on
+> this transcript — never phrased as a general property of either model.
 >
 > **Amended the same session: Deviation 12's "left open" call turned out to
 > be wrong on reflection — see Deviation 13.** Committing 46 cassettes whose

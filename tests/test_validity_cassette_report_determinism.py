@@ -165,12 +165,27 @@ def test_config_b_numbers_are_reproducible_and_complete() -> None:
     assert disc["bad_blocker_confusion_count"] == 6
     assert disc["good_blocker_confusion_count"] == 0
     assert disc["material_difference"] is True
+    assert disc["bad_personas_attempted"] == disc["bad_personas_completed"] == 5
+    assert disc["good_personas_attempted"] == disc["good_personas_completed"] == 5
     assert {p["agent"] for p in disc["provenance"]} == {
         "analyst",
         "moderator",
         "persona",
     }
     assert all(p["model"] == "claude-haiku-4-5" for p in disc["provenance"])
+
+    # PROJECT_SPEC.md §M6 Deviation 20: the aggregate above (6 vs 0) is
+    # identical to Config A's, but the composition behind it is not --
+    # Config A's committed docs/validity_report.md shows
+    # `{blocker: 1, confusion: 5, missing_info: 2}` (5 distinct evidence
+    # anchors) on the bad artefact; Config B's Haiku Analyst produces zero
+    # `blocker` findings on the identical replayed transcript, reclassified
+    # into `confusion` instead (1+5 = 0+6 = 6 either way), anchored to
+    # fewer distinct positions.
+    assert disc["bad_category_counts"] == {"confusion": 6, "missing_info": 1}
+    assert disc["bad_distinct_anchor_count"] == 2
+    assert disc["good_category_counts"] == {"delight": 5}
+    assert disc["good_distinct_anchor_count"] == 1
 
     calib = first["known_answer_calibration"]
     assert isinstance(calib, dict)
