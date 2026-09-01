@@ -1189,6 +1189,9 @@ states at least two concrete, measured weaknesses.
 >   plainly that Config A's real numbers are Sonnet-Analyst-specific and do
 >   not transfer to a cheaper or different model combination — Config B
 >   remains open, and §M6's acceptance does not require it.
+>   **Config B recorded in a later session — see Deviation 18 below. This
+>   template paragraph's own wording is deliberately not yet updated to
+>   describe it — pending review of where the comparison belongs.**
 >
 > Config B is **not required for M6's own acceptance criteria** (§M6:
 > "validity report generated end-to-end offline"; the real-provider
@@ -1197,6 +1200,66 @@ states at least two concrete, measured weaknesses.
 > 46 cassettes as-is, with Config B left open, is a deliberate choice made
 > with the person running this project, not a shortfall against this
 > section's acceptance line.
+>
+> **Deviation 18 (a later session): Config B recorded successfully; the
+> "B is A with the Analyst swapped" claim holds, evidenced by a number, not
+> asserted.** `scripts/record_validity_cassettes.py` was re-run for real
+> against the same `tests/cassettes/`, once §M7 Deviation 17's own note
+> confirmed the real, root cause of Deviation 12's `APIConnectionError` was
+> Deviation 13's gzip-header bug — fixed and replay-verified at `ac5774e`,
+> but never exercised against a live dispatch until this run (the first
+> real network call to succeed from this repo since that fix). Result:
+> **Config A wrote 0 new cassettes** (every one of its 46 requests replayed
+> — confirms no key-mismatch drift since Deviation 12/13, and that this run
+> couldn't have confounded Config B's own count), **Config B wrote exactly
+> 10** (matching Config A's own recorded Analyst-call count from Deviation
+> 12 exactly — 10 Sonnet Analyst calls there, 10 Haiku Analyst calls here),
+> **56 cassette files total on disk.** Real spend this run: **$0.0128**
+> (10 fresh `claude-haiku-4-5` Analyst calls; every Persona/Moderator/probe
+> request replayed at $0, as the script's own docstring predicted). One new
+> cassette was inspected by hand: `"model": "claude-haiku-4-5-20251001"` in
+> the request, a clean `{"findings": [...]}` body, `200`, no stale
+> `content-encoding` header — Deviation 13's fix holds on a fresh write, not
+> just on the 46 migrated-in-place files it was originally verified against.
+>
+> **All four Config B section statuses: `measured`.** No
+> `PARTIALLY_MEASURED` anywhere in either config this run.
+>
+> **Scrubbing gate, run before committing, against the real 56-file
+> directory (not the empty one `tests/test_real_cassette_scrubbing.py`'s own
+> docstring still describes):** all 3 assertions in that file passed for
+> real, not vacuously. Independently, the 10 new files were grepped by hand
+> for the `sk-ant-` prefix, for credential header names
+> (`x-api-key`/`authorization`), and for the last 8 characters of the live
+> configured key — zero matches on all three.
+>
+> **`sul validate` is unaffected, confirmed both structurally and
+> empirically.** `src/sul/cli.py::_select_validate_provider` always
+> constructs its replay-only provider with `_CASSETTE_CONFIG_MODEL`/
+> `_CASSETTE_CONFIG_ANALYST_MODEL` (Haiku/Sonnet — Config A's own
+> combination) regardless of what else is on disk, so `match_key()`
+> (embeds the request's `model` field) can never route it to a
+> Haiku-Analyst cassette. `.\make.ps1 validate` was re-run after this
+> session's recording pass: `docs/validity_report.md`'s SHA-256 is
+> unchanged, and `git diff` against both `docs/validity_report.md` and
+> `docs/limitations.md` is empty —
+> `tests/test_validity_cassette_report_determinism.py`'s own byte-identical
+> guarantee holds against the now-56-file directory, not just the original
+> 46.
+>
+> **One-line self-contradiction fixed in the same commit:**
+> `sul.validity.harness.run_validity_harness`'s own docstring said
+> `max_cost_usd` "can together spend up to roughly 3x it" while two lines
+> above stating discriminative validity alone spends it twice (once per
+> artefact study) — three call sites, one doubled, is four independent
+> budget guards, not three. Now reads "roughly 4x", matching the arithmetic
+> stated two lines above it, not contradicting it.
+>
+> **What Config B is not, yet:** these 10 cassettes exist and replay
+> cleanly, but nothing in `sul validate`'s own path reads them (by design —
+> see above), and no Haiku-vs-Sonnet Analyst comparison has been written up
+> anywhere in this repo's prose. That is deliberately a separate step,
+> pending its own review.
 >
 > **Amended the same session: Deviation 12's "left open" call turned out to
 > be wrong on reflection — see Deviation 13.** Committing 46 cassettes whose

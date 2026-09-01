@@ -194,10 +194,12 @@ async def run_validity_harness(
     validity (which spends it twice, once per artefact study, per
     `sul.validity.discriminative.run_discriminative_validity`'s own
     docstring), acquiescence, and position bias. It is a **per-check**
-    ceiling, not a shared whole-harness total: three checks each given the
-    same `max_cost_usd` can together spend up to roughly 3x it. Omitted (the
-    default), every check's probe/study spend is unbounded, exactly as
-    before this parameter existed.
+    ceiling, not a shared whole-harness total: four independent budget
+    guards (discriminative validity's two artefact studies, plus
+    acquiescence, plus position bias) each given the same `max_cost_usd`
+    can together spend up to roughly 4x it. Omitted (the default), every
+    check's probe/study spend is unbounded, exactly as before this
+    parameter existed.
     """
     if not isinstance(provider, _ALLOWED_PROVIDER_TYPES):
         raise UnsupportedValidityProviderError(provider)

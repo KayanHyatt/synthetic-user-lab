@@ -10,13 +10,19 @@ the literal key value as a substring. No network call; reads only files
 already on disk, so this stays offline (CLAUDE.md) regardless of whether a
 key is configured.
 
-`tests/cassettes/` is empty as of this commit -- the recording pass that
-first populated it (PROJECT_SPEC.md §M6 note) found real Haiku's structured
-output too unreliable to produce a usable recording, and its 26 cassettes
-were deleted rather than committed. Every assertion below iterates
-`_real_cassette_files()` and is vacuously true against an empty directory,
-so this file is ready to run for real the moment a recording pass actually
-commits cassettes, without needing to be rewritten first.
+`_real_cassette_files()` globs `tests/cassettes/` fresh every time this file
+runs -- every assertion below is checked against whatever is actually
+committed there at test-run time, never a fixed snapshot recorded in this
+docstring. That matters because this file has already gone vacuous once
+without anyone noticing: an earlier recording pass found real Haiku's
+structured output too unreliable to produce a usable recording and its 26
+cassettes were deleted rather than committed, leaving `tests/cassettes/`
+empty for several commits while this file kept reporting "passed" against
+zero files. As of PROJECT_SPEC.md §M6 Deviations 12/13/18, the directory
+holds real recorded traffic (Config A + Config B) and these assertions run
+for real; if it is ever emptied again, they will silently go back to being
+vacuously true rather than fail loudly -- a limitation of iterating a glob
+with no minimum-count check, not fixed by this docstring alone.
 """
 
 from __future__ import annotations
