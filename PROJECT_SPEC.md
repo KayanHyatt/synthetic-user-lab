@@ -2128,6 +2128,7 @@ the limitations section, and "what I'd do differently with real participants."
 > forbids estimating it. This sits outside §M8's six-element list; recorded
 > here because the instruction was project-level and its brackets were
 > genuinely fillable (or, for `[40]`, genuinely and explicitly not).
+> **`[40]` filled in a later session — see Deviation 22.**
 >
 > **Cost-table honesty note (not a deviation, a fact folded into the
 > README itself):** `sul.db` records three validity-harness passes at
@@ -2137,6 +2138,74 @@ the limitations section, and "what I'd do differently with real participants."
 > The README's cost table cites the single 5-persona measured basis
 > ($0.052706, study 47) rather than `sul.db`'s summed total, to avoid
 > repeating that inflation into a portfolio-facing number.
+>
+> **Deviation 22 (a later session): the first real 40-persona study —
+> `configs/study.40.yaml`, study 146, `uv run sul run configs/study.40.yaml
+> --provider anthropic --concurrency 5`. 40/40 personas completed, 0
+> failures, $0.2104 real spend, 118 calls.** `panel.example.yaml` untouched
+> (already `size: 40`). Confirmed twice: `sul run`'s own summary line
+> (`personas=40 already_completed=0 completed_this_run=40 failed=0`) and an
+> independent direct query of every `Run` row for `study_id=146`, all 40
+> `COMPLETED`. On explicit instruction, a failure of even one persona would
+> have stopped this deviation short of filling anything — §M7 Deviation
+> 17's own per-run containment means a `BudgetGuard` breach or a live
+> provider error now marks that one `Run` `FAILED` and the study finishes
+> anyway, so a partial panel can still print a plausible-looking total; §7's
+> `[40]` and the cost table both require the genuine 40-of-40 this run
+> happened to produce, not a number that would look the same either way.
+>
+> **A different configuration from the README's existing 5-persona "measured
+> basis," not an ×8 confirmation of it — stated explicitly, not left for a
+> reader to assume from adjacency.** `sul run`/`StudyRunConfig` has no
+> `model_by_agent` field (confirmed by reading `sul.cli.run` and
+> `RunnerOptions` before proposing this config): every agent dispatches on
+> one model, so this run is all-`claude-haiku-4-5` — persona, moderator,
+> *and* Analyst — where the existing basis is Config A's own Sonnet-Analyst
+> mix. The README's Cost section presents both as separate, individually
+> labelled measurements; the original ×8-from-Config-A extrapolation
+> (~$0.42, still never run for real) is **kept, not retired** — this run
+> neither confirms nor refutes it, since the model mix differs.
+>
+> **The weak step named in the original extrapolation ("assumes every
+> agent's call count scales linearly with persona count") was real, not
+> idle hedging.** Linear ×8 scaling from the 5-persona basis's own 3
+> Moderator / 8 Persona / 5 Analyst calls predicted 24 / 64 / 40. The real
+> 40-persona run: **Analyst 40 — exact**, deterministic by construction (one
+> dispatch per persona, always); **Moderator 19 and Persona 59 — both
+> sub-linear**, because follow-ups depend on how often a persona reports
+> confusion or gives up, and the 5-persona sample's own rate (3 of 5, 60%)
+> was too small to estimate reliably — the real rate was 19 of 40 (47.5%).
+> Repricing the 5-persona basis's Analyst tokens at Haiku rates (exactly 1/3
+> of Sonnet's, both input and output, per `configs/pricing.yaml`) and
+> scaling ×8 as a sanity check projects ≈$0.25 against the real $0.2104 —
+> close, but built on the same linear-scaling assumption this run's own
+> Moderator/Persona counts just showed doesn't hold; not a substitute for
+> the measurement, reported in the README alongside it for exactly that
+> reason.
+>
+> **This study's findings enter no validity claim, and must not be mistaken
+> for a third configuration alongside A and B — stated here so a later
+> session can't make that mistake.** Every agent here ran on
+> `claude-haiku-4-5`, including the Analyst — the same model Deviation 20/21
+> already measured as producing zero `blocker` findings on this artefact and
+> reporting *something* for nearly every persona regardless of artefact
+> quality. This run measures panel size and cost only. Its `Finding` rows
+> are not counted toward, compared against, or cited by discriminative
+> validity, calibration, acquiescence, position bias, or any other §M6
+> check.
+>
+> **README updated:** the Cost section now carries both measurements
+> side by side, each labelled with its own model mix and study id, the
+> repriced-Haiku sanity-check reasoning above, and the no-validity-claim
+> caveat above, verbatim, not summarised. The Claim-trace table's single
+> "40-persona study cost (extrapolation)" row is split in two: the
+> original Config-A extrapolation stays **Unverified**, and a new row for
+> this real all-Haiku run reads **Measured**, citing study 146.
+> `tests/test_docs_claims.py` has nothing hard-coding the old extrapolation
+> wording (checked before editing), so no test needed updating for the
+> wording change itself — the file's existing existence/link checks cover
+> the new `configs/study.40.yaml` reference the same way they cover every
+> other path named in `README.md`.
 
 ---
 
@@ -2174,11 +2243,13 @@ Fill the brackets from real output — don't estimate.
 > (largest recorded: 5 personas, PROJECT_SPEC.md §M8's own cost table). The
 > literal instruction ("don't estimate") makes `[40]` unfillable without
 > running one; recorded here as a deviation rather than silently estimated.
+> **Filled in a later session, from a real 40-persona run — see Deviation 22
+> for the numbers and, importantly, for what this run does *not* license
+> claiming.**
 
-- Built a multi-agent research harness that runs panels of [never run at 40 —
-  largest recorded study: 5] LLM-simulated users against product artefacts,
-  with role-isolated moderator/persona/analyst agents to prevent hypothesis
-  leakage into responses.
+- Built a multi-agent research harness that runs panels of 40 LLM-simulated
+  users against product artefacts, with role-isolated moderator/persona/
+  analyst agents to prevent hypothesis leakage into responses.
 - Designed a provider-agnostic LLM layer with record/replay cassettes, per-call
   cost accounting and budget kill-switches; full test suite runs offline in
   [~83]s (325 tests, `.\make.ps1 test`) with zero API spend.

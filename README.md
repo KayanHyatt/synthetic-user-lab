@@ -126,13 +126,8 @@ plus `sul demo`, both of which need no cassette. `Dockerfile`,
 
 ## Cost
 
-Nothing in this project has ever run a 40-persona study — the largest real
-study recorded is 5 personas. The table below is an **extrapolation**, not a
-measurement: it scales the real, cassette-backed 5-persona discriminative
-validity run 8× and prices it through `sul.pricing.cost_for` against the
-committed `configs/pricing.yaml` rate card, not a hand-typed number.
-
-**Measured basis — 5 personas, bad-onboarding artefact, Config A:**
+**Measured basis — 5 personas, bad-onboarding artefact, Config A
+(`claude-sonnet-5` Analyst):**
 
 | Agent | Model | Calls | Tokens in / out | Cost |
 |---|---|---|---|---|
@@ -141,11 +136,59 @@ committed `configs/pricing.yaml` rate card, not a hand-typed number.
 | Persona | `claude-haiku-4-5` | 8 | 13,740 / 953 | $0.018505 |
 | **Total** | | **16** | | **$0.052706** |
 
-**Extrapolated to 40 personas (×8, unverified projection):** roughly **$0.42**
-per study on this provider mix. The weak step in this projection is that it
-assumes every agent's call count scales linearly with persona count — the
-Moderator and Analyst sides have never actually been run at 40 personas, so
-whether they scale linearly is untested, not just unmeasured.
+**Extrapolated to 40 personas at Config A's own model mix (×8, still an
+unverified projection — kept, not retired, by the real measurement below):**
+roughly **$0.42**. This scales the table above 8× and prices it through
+`sul.pricing.cost_for` against the committed `configs/pricing.yaml` rate
+card, not a hand-typed number, but the underlying study — 40 personas,
+Sonnet as Analyst — has never actually been run. The real 40-persona run
+below used a *different* model mix, so it neither confirms nor refutes this
+number; the weak step named here originally (every agent's call count
+scaling linearly with persona count) is addressed below, not by this row.
+
+**Measured — 40 personas, bad-onboarding artefact, all-`claude-haiku-4-5`
+(study 146, `configs/study.40.yaml`, `uv run sul run configs/study.40.yaml
+--provider anthropic --concurrency 5`; 0/40 failures). A different
+configuration from Config A above, not an ×8 confirmation of it:** `sul
+run`/`StudyRunConfig` has no per-agent model override, so persona, moderator,
+*and* Analyst all ran on Haiku here, where the basis above uses Sonnet as
+Analyst.
+
+| Agent | Model | Calls | Tokens in / out | Cost |
+|---|---|---|---|---|
+| Analyst | `claude-haiku-4-5` | 40 | 37,992 / 3,854 | $0.057262 |
+| Moderator | `claude-haiku-4-5` | 19 | 14,175 / 831 | $0.018330 |
+| Persona | `claude-haiku-4-5` | 59 | 101,083 / 6,743 | $0.134798 |
+| **Total** | | **118** | | **$0.210390** |
+
+**Did the Moderator and Analyst sides scale linearly with persona count —
+the extrapolation's own named weak step? Analyst: yes, exactly** — 40 calls
+for 40 personas, deterministic by construction (one Analyst dispatch per
+persona, always). **Moderator and Persona: no, sub-linearly** — the ×8
+linear projection from the 5-persona basis's own 3 Moderator / 8 Persona
+calls predicted 24 / 64; the real run needed only 19 / 59. Follow-up calls
+depend on how often a persona reports confusion or gives up, which the
+5-persona sample (3 of 5 triggered one, 60%) was too small to estimate
+reliably — the real rate was lower, 19 of 40 (47.5%).
+
+As a sanity check across the model-mix difference, not a substitute for the
+measurement above: repricing the 5-persona basis's own Analyst tokens at
+Haiku rates (exactly 1/3 of Sonnet's, both input and output, per
+`configs/pricing.yaml`) instead of Sonnet's gives an all-Haiku
+5-persona-equivalent total of $0.031778, and projecting that ×8 lands at
+**≈$0.25** — close to the real **$0.2104**, but it still assumes the same
+linear call-count scaling the paragraph above just showed doesn't actually
+hold, so the closeness is partly coincidence.
+
+**This 40-persona run measures panel size and cost only — none of its
+findings are a validity claim, and it is not a third configuration
+alongside A and B.** Every agent here ran on `claude-haiku-4-5`, including
+the Analyst — the same model this README's "Measured limits" section and
+the Claim-trace table below already measured as producing zero `blocker`
+findings on this artefact and reporting *something* for nearly every
+persona regardless of artefact quality. Its `Finding` rows are not counted
+toward, and must not be read as, discriminative validity, calibration,
+acquiescence bias, position bias, or any other measured-limits check above.
 
 **Per provider:** `configs/pricing.yaml` prices Anthropic (`claude-opus-5`
 $5.00/$25.00, `claude-sonnet-5` $3.00/$15.00, `claude-haiku-4-5` $1.00/$5.00,
@@ -199,7 +242,8 @@ or **Unverified** (stated as such, never silently implied).
 | Standing caveat survives every HTMX swap | Structural | `tests/test_web_caveat.py::test_caveat_element_is_never_inside_an_htmx_swap_target` |
 | A persona run failing on `Overloaded`/`RateLimited`/`Refused`/`BadRequest`/a connection error is marked `FAILED` with a recorded error, never left stuck `RUNNING`, and sibling personas are unaffected | Structural | `tests/test_orchestrator_provider_error_containment.py::test_a_provider_error_other_than_budget_marks_the_run_failed` |
 | No test hits a real LLM API | Structural | session-scoped socket guard, `tests/conftest.py` |
-| 40-persona study cost | Unverified (extrapolation) | scaled ×8 from the measured 5-persona table above |
+| 40-persona study cost at Config A's own model mix (×8 extrapolation, never run for real) | Unverified (extrapolation) | scaled ×8 from the measured 5-persona table above |
+| 40-persona study cost, all-`claude-haiku-4-5` (a different configuration, not Config A) | Measured | study 146, `## Cost` above |
 | `openai`/`gemini` cost tiers | Unverified (no rate card) | `configs/pricing.yaml` — sections deliberately empty |
 | §M7 Docker packaging (`docker compose up` → `make demo` → dashboard, no API key) | Demonstrated | `PROJECT_SPEC.md` §M7 note, recorded MET; `Dockerfile`, `docker-compose.yml`, `.dockerignore` |
 | 60-second demo runs offline, no API key | Demonstrated | `.\make.ps1 install && .\make.ps1 demo && .\make.ps1 validate` |

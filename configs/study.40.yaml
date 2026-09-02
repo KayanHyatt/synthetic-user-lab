@@ -1,0 +1,38 @@
+# PROJECT_SPEC.md §7's [40] bullet: the first real, non-FakeProvider study at
+# panel.example.yaml's actual size (40) -- everything below is copied from
+# study.example.yaml unchanged except runner.provider, runner.model,
+# runner.concurrency, and budget.max_cost_usd (PROJECT_SPEC.md deviation
+# pending this run). panel_config_path is untouched: configs/panel.example.yaml
+# is already size: 40.
+name: "Bad onboarding usability study (40-persona, real Anthropic)"
+research_goal: >-
+  Determine whether new users can sign up for the free trial without getting
+  stuck on unclear required fields or pricing that doesn't match what the
+  page promised.
+
+artefact:
+  name: bad_onboarding.html
+  kind: html
+  path: artefacts/bad_onboarding.html
+
+scenario:
+  task: >-
+    You've just landed on this page for the first time, looking to try the
+    product out. Go ahead and sign up for the free trial.
+  questions:
+    - "Was the pricing clear, or did anything about the price surprise you?"
+    - "Was there a point where you weren't sure what a field wanted from you?"
+    - "Did everything on the page do what you expected when you clicked it?"
+
+panel_config_path: configs/panel.example.yaml
+
+budget:
+  max_cost_usd: 1.00
+
+runner:
+  provider: anthropic
+  model: claude-haiku-4-5
+  temperature: 0.7
+  max_tokens: 400
+  concurrency: 5
+  max_followups: 3
